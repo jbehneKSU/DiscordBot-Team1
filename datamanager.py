@@ -41,6 +41,12 @@ def addnew():
     dbconn.commit()
     loadPlayers()
 
+def delete():
+    args = (result[idx]["discordID"],)
+    cur.execute("DELETE FROM Player WHERE DiscordID = ?", args)
+    dbconn.commit()
+    loadPlayers()        
+
 def onselect(evt):
     w = evt.widget
 
@@ -71,6 +77,44 @@ def cleartext():
     txtpreferences.delete(1.0, END)
     txtToxicity.delete(1.0, END)
 
+
+#Method to load the database with test player data
+def create_data():
+    try:
+        dbconn = sqlite3.connect("bot.db")
+        cur = dbconn.cursor()
+
+        query = """INSERT INTO Player (discordID, discordName, lolID, lolRank, preferences, toxicity) VALUES
+            (123456789012345678, 'Player1', 'LOLPlayer1', 'Diamond', '01234', 2),
+            (123456789012345679, 'Player2', 'LOLPlayer2', 'Platinum', '10100', 1),
+            (123456789012345680, 'Player3', 'LOLPlayer3', 'Gold', '00321', 3),
+            (123456789012345681, 'Player4', 'LOLPlayer4', 'Silver', '22222', 4),
+            (123456789012345682, 'Player5', 'LOLPlayer5', 'Bronze', '00001', 5),
+            (123456789012345683, 'Player6', 'LOLPlayer6', 'Diamond', '43210', 2),
+            (123456789012345684, 'Player7', 'LOLPlayer7', 'Platinum', '32100', 3),
+            (123456789012345685, 'Player8', 'LOLPlayer8', 'Gold', '21000', 4),
+            (123456789012345686, 'Player9', 'LOLPlayer9', 'Silver', '10001', 5),
+            (123456789012345687, 'Player10', 'LOLPlayer10', 'Bronze', '00400', 1),
+            (123456789012345688, 'Player11', 'LOLPlayer11', 'Diamond', '43210', 2),
+            (123456789012345689, 'Player12', 'LOLPlayer12', 'Platinum', '32100', 3),
+            (123456789012345690, 'Player13', 'LOLPlayer13', 'Gold', '21030', 4),
+            (123456789012345691, 'Player14', 'LOLPlayer14', 'Silver', '11234', 5),
+            (123456789012345692, 'Player15', 'LOLPlayer15', 'Bronze', '11111', 1),
+            (123456789012345693, 'Player16', 'LOLPlayer16', 'Diamond', '43210', 2),
+            (123456789012345694, 'Player17', 'LOLPlayer17', 'Platinum', '32100', 3),
+            (123456789012345695, 'Player18', 'LOLPlayer18', 'Gold', '21000', 4),
+            (123456789012345696, 'Player19', 'LOLPlayer19', 'Silver', '10010', 5),
+            (123456789012345697, 'Player20', 'LOLPlayer20', 'Bronze', '03420', 1);"""
+        cur.execute(query)
+        dbconn.commit()
+
+    except sqlite3.Error as e:
+        print (f'Database error occurred generating test date: {e}')
+
+    finally:
+        cur.close()
+        dbconn.close() 
+
 #endregion
 
 #region APP_BASE
@@ -84,12 +128,12 @@ root.geometry('500x350')
 # Create tab view
 tabControl = ttk.Notebook(root)
 tabPlayerData = ttk.Frame(tabControl)
-tabReports = ttk.Frame(tabControl)
-tabConfiguration = ttk.Frame(tabControl)
+tabGameData = ttk.Frame(tabControl)
+# tabConfiguration = ttk.Frame(tabControl)
 
 tabControl.add(tabPlayerData, text='Player Data')
-tabControl.add(tabReports, text='Reports')
-tabControl.add(tabConfiguration, text='Configuration')
+tabControl.add(tabGameData, text='Game Data')
+# tabControl.add(tabConfiguration, text='Configuration')
 
 tabControl.pack(expand=1, fill="both")
 #endregion
@@ -116,7 +160,7 @@ txtToxicity = Text(tabPlayerData, height=1, width=20)
 # Define buttons
 btnNew = Button(tabPlayerData, text="New", width=10, command=addnew)
 btnSave = Button(tabPlayerData, text="Save", width=10, command=saveplayer)
-btnDelete = Button(tabPlayerData, text="Delete", width=10)
+btnDelete = Button(tabPlayerData, text="Delete", width=10, command=delete)
 
 listbox.bind('<<ListboxSelect>>', onselect)
 

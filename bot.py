@@ -5,8 +5,7 @@ What is working
 *   /toxicity command is complete
 *   /preferences command is complete
 *   /fill command is complete
-*   Checkin, fill, preferences calls the register_player which uses the unique ID to add them to the database or check to see if their
-        Discord Name needs to be updated.
+*   register_player will update the player's discord name if it is different
 
 Things to do for milestone 1 by 9/20
 *   Do all processing in the SQLITE database and create an export to sheets function later
@@ -20,11 +19,13 @@ Things to do for milestone 1 by 9/20
 Milestone 2:
 *   Matchmaking - look at ChatGPT/Gemini integration to perform the matchmaking
 *   Look at command security - admin vs non-admin ability to execute 
-*       /checkin should be admin only while /preferences is for everyone
+*       Example: /checkin should be admin only while /preferences is for everyone
+*       This will require creating an "Admin" role in the channel and granting it admin privileges
 *   /export to export the current points, player preferences & rank, and games played similar to existing sheet
 *   Set the selected /preference to the existing value
 *   Riot games API to get and update player LOL rank
 *   MVP functionality
+*   /activegames command to see open games
 
 Milestone 3:
 *   
@@ -177,7 +178,7 @@ class CheckinButtons(discord.ui.View):
         player = get(interaction.guild.roles, name = 'Player')
         member = interaction.user
 
-        register_player(interaction)
+        lolname = register_player(interaction)
 
         if player in member.roles:
             await interaction.response.edit_message(view = self)
@@ -185,7 +186,7 @@ class CheckinButtons(discord.ui.View):
             return "Is already checked in"
         await member.add_roles(player)
         await interaction.response.edit_message(view = self)
-        await interaction.followup.send('You have checked in!  Be sure to check your /preferences', ephemeral = True)
+        await interaction.followup.send(f'You have checked in as "{lolname}"!  Be sure to check your /preferences and update your /lolid if needed.', ephemeral = True)
         return "Checked in"        
 
     """
@@ -212,6 +213,7 @@ class CheckinButtons(discord.ui.View):
         await interaction.followup.send('You have not checked in. Please checkin first', ephemeral = True)
         return "Did not check in yet"
 
+#Volunteer button class
 class volunteerButtons(discord.ui.View):
     def __init__(self, *, timeout = 900):
         super().__init__(timeout = timeout)
@@ -350,12 +352,14 @@ def register_player(interaction: discord.Interaction):
         data = cur.fetchone()
 
         if data[0] == 0:
-            query = "INSERT INTO Player (discordID, discordName, lolID, lolRank, preferences, toxicity) VALUES (?, ?, '', '', '11111', 0)"
+            query = "INSERT INTO Player (discordID, discordName, lolID, lolRank, preferences, toxicity) VALUES (?, ?, '', 'Bronze', '11111', 0)"
             args = (member.id, member.name,)
             cur.execute(query, args)
             dbconn.commit()
+
+            return "n/a"
         else:
-            query = 'SELECT discordName FROM Player WHERE discordID = ?'
+            query = 'SELECT discordName, lolID FROM Player WHERE discordID = ?'
             args = (member.id,)
             cur.execute(query, args)
             result = cur.fetchone()
@@ -365,6 +369,8 @@ def register_player(interaction: discord.Interaction):
                 args = (member.name, member.id,)
                 cur.execute(query, args)
                 dbconn.commit()                
+
+            return str(result[1]).strip()
 
     except sqlite3.Error as e:
         print(f"Database error occurred registering player: {e}")
@@ -536,8 +542,76 @@ def update_toxicity(interaction, discord_username):
     #     return e
 
 #Method to create teams
-def create_teams():
+def create_teams(self, player_users):
+    # matched_players = []
+
+    # Player definition order = self, tier, username, discord_id, top_priority, jungle_priority, mid_priority, bot_priority, support_priority
+    try:
+        dbconn = sqlite3.connect("bot.db")
+        cur = dbconn.cursor()
+        query = f"SELECT * FROM Player WHERE discordID IN ({','.join(['?' for _ in player_users])})"
+        cur.execute(query, player_users)
+        data = cur.fetchall()
+
+        # for pl in data:
+        #     matched_players.append(Player(self, pl[3], pl[2], pl[1], pl[4][0], pl[4][1], pl[4][2], pl[4][3], pl[4][4]))
+            
+    except sqlite3.Error as e:
+        print (f'Database error occurred creating teams: {e}')
+        return e
+
+    finally:
+        cur.close()
+        dbconn.close()    
+
+    # for i, row in enumerate(values):
+    #     for player in player_users:
+    #         if player.lower() == row[0].lower():
+    #             top_prio = 5
+    #             jg_prio = 5
+    #             mid_prio = 5
+    #             bot_prio = 5
+    #             supp_prio = 5
+    #             if row[3] == 'fill':
+    #                 top_prio = 1
+    #                 jg_prio = 1
+    #                 mid_prio = 1
+    #                 bot_prio = 1
+    #                 supp_prio = 1
+    #             roles = row[3].split('/')
+    #             index = 1
+    #             for i, role in enumerate(roles):
+    #                 if role.lower() == 'top':
+    #                     top_prio = index
+    #                 if role.lower() == 'jg' or role.lower() == 'jung' or role.lower() == 'jungle':
+    #                     jg_prio = index
+    #                 if role.lower() == 'mid':
+    #                     mid_prio = index
+    #                 if role.lower() == 'bot' or role.lower() == 'adc':
+    #                     bot_prio = index
+    #                 if role.lower() == 'supp' or role.lower() == 'support':
+    #                     supp_prio = index
+    #                 index += 1
+    #             matched_players.append(Player(tier=row[4],username=row[1],discord_id=row[0], top_priority=top_prio, jungle_priority=jg_prio, mid_priority=mid_prio, bot_priority=bot_prio, support_priority=supp_prio))    
     return
+
+#Method to update LOL ID
+def update_lolid(interaction: discord.Interaction, id):
+    try:
+        dbconn = sqlite3.connect("bot.db")
+        cur = dbconn.cursor()
+        query = f"UPDATE Player SET lolID = ? WHERE discordID = ?"
+        args = (id, interaction.user.id)
+        cur.execute(query, args)
+        dbconn.commit()
+            
+    except sqlite3.Error as e:
+        print (f'Database error occurred updating LOL ID: {e}')
+        return e
+
+    finally:
+        cur.close()
+        dbconn.close()     
 
 
 
@@ -711,6 +785,16 @@ async def calculate_score_diff(team1, team2):
 #endregion METHODS
 
 #region COMMANDS
+
+#Command to update player's league of legends ID
+@tree.command(
+    name = 'lolid',
+    description = 'Initiate Tournament Check-In.',
+    guild = discord.Object(GUILD))
+async def lolid(interaction, id: str):
+    update_lolid(interaction, id)
+    await interaction.response.send_message('Your League of Legends ID has been updated.', ephemeral=True)
+
 #Command to start check-in
 @tree.command(
     name = 'checkin',
@@ -895,25 +979,16 @@ async def points(interaction: discord.Interaction):
     guild = discord.Object(GUILD))
 async def matchmake(interaction: discord.Interaction, match_number: int):
     try:
-        #Finds all players in discord, adds them to a list
-        player_users = []
-        player = get(interaction.guild.roles, name = 'Player')
-        for user in interaction.guild.members:
-            if player in user.roles:
-                player_users.append(user.name)
-        
-        #Finds all volunteers in discord, adds them to a list
-        volunteer_users = []
-        volunteer = get(interaction.guild.roles, name = 'Volunteer')
-        for user in interaction.guild.members:
-            if volunteer in user.roles:
-                volunteer_users.append(user.name)
+        player_role = get(interaction.guild.roles, name='Player')
+        player_users = [member.id for member in player_role.members]
 
-        await interaction.response.defer()
-        await asyncio.sleep(8)
+        volunteer_role = get(interaction.guild.roles, name='Volunteer')
+        volunteer_users = [member.id for member in volunteer_role.members]
 
-        if player_users.count() % 10 != 0:
-            await interaction.followup.send('There is not a multipe of 10 players, please see /players', ephemeral = True)
+        create_teams(player_users) #temp test
+
+        if len(player_users) % 10 != 0:
+            await interaction.followup.send('There is not a multiple of 10 players, please see /players', ephemeral = True)
             return
 
         dbconn = sqlite3.connect("bot.db")
@@ -922,7 +997,7 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
         result = cur.execute(query)
 
         if result[0] != 0:
-            await interaction.followup.send('There is an incomplete game that needs to be closed, see /activegame', ephemeral = True)
+            await interaction.followup.send('There are one or more incomplete games that need to be closed, see /activegames', ephemeral = True)
             return
 
         for idx in range(0, player_users.count()/10):
@@ -931,6 +1006,7 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
             cur.execute(query, args)
             dbconn.commit()
 
+        create_teams(player_users)
         # values = get_values_matchmaking('Player Tiers!A1:E100')
 
         # matched_players = []
