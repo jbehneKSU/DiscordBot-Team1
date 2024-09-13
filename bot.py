@@ -1,58 +1,3 @@
-'''
-What is working/done
-*   All backend work is being done in a SQLITE database
-*   Code is generally using the 18 digit Discord ID to track users
-*   /checkin command is complete, prompts the player to update preferences and riotID
-*   /volunteer command is complete, no changes needed
-*   /toxicity command is working, but may need to change the ID passed in
-*   /preferences command is complete and displays current preferences when called
-*   /fill command is complete, setting all preferences to 1
-*   register_player function will update the player's discord name if it is different
-*       this function is called when using the check in button and /preferences command
-
-Things to do for milestone 1 by 9/20
-*C   Do all processing in the SQLITE database and create an export to sheets function later
-*C   Modify all code that looks up player by name to use the unique Discord ID instead
-*C   Function to update discord name in database if different than current name (using unique ID), called at checkin?
-*   Interface for users to change their Riot name and preferences, hopefully an embed the player can execute
-*   Preferences stored as an encoded string where 0 = never through 4 = most wanted
-*       Position of characters corresponds to Top/Jng/Mid/ADC/Sup in that order
-*   Set the selected /preference to the existing value
-*   Matchmaking - current algorithm is slow, see if it can be coded better.
-*       /matchmake command is the current implementation
-*       This will need to create the game # in the Games table, plus 1 lobby for every 10 players
-*       The teams will need to be written to the GameDetail table
-
-* Additional work added 9/13
-•	For preferences, reverse and drop the 0, so 1 = best and 5 = worst on preference
-•	Add the ability to launch preferences embed with a button
-•	Change lolid to riotID to be more clear to players
-•	Check for # in tag – a riot ID consists of two parts with a # symbol so there should be some checking there
-•	Explain riotID format to user, be clear that the format should be in the correct Riot ID format.
-•	Change /preference command name to /roleselect
-•	Interface for the player to understand the bot, like a /help embed
-•	Add parms for checkin timeout, Kylie would like to be able to set this
-•	Expect Riot API to take a week to be approved for access
-
-
-Milestone 2:
-*   Set the /win command to pass just the game number, lobby, and team and update GameDetail
-*   Matchmaking - look at ChatGPT/Gemini integration to perform the matchmaking, if not included in M1
-*       Gemini is already working well, the prompt may need some more tweaks for accuracy though
-*       ChatGPT would be a good alternative to consider
-*   Look at command security - admin vs non-admin ability to execute 
-*       Example: /checkin should be admin only while /preferences is for everyone
-*       This will require creating an "Admin" role in the channel and granting it admin privileges
-*   /export to export the current points, player preferences & rank, and games played similar to existing sheet
-*   Riot games API to get and update player LOL rank
-*   MVP voting functionality
-*   /activegames command to see open games
-*   Add ability for admin to make changes to the teams
-
-Milestone 3:
-*   
-'''
-
 import asyncio
 import discord
 import os
@@ -146,11 +91,11 @@ class Team:
 class Dropdown(discord.ui.Select):
     def __init__(self, position):
         options = [
-            discord.SelectOption(label=f'{position} - 0', description=f'Absolutely not'),
-            discord.SelectOption(label=f'{position} - 1', description=f'Low preference'),
-            discord.SelectOption(label=f'{position} - 2', description=f'Medium preference'),
-            discord.SelectOption(label=f'{position} - 3', description=f'Higher preference'),
-            discord.SelectOption(label=f'{position} - 4', description=f'Must have'),
+            discord.SelectOption(label=f'{position} - 1', description=f'Highest priority'),
+            discord.SelectOption(label=f'{position} - 2', description=f'Higher priority'),
+            discord.SelectOption(label=f'{position} - 3', description=f'Medium priority'),
+            discord.SelectOption(label=f'{position} - 4', description=f'Low Priority'),
+            discord.SelectOption(label=f'{position} - 5', description=f'Absolutely not'),
         ]
         super().__init__(placeholder=f'{position} preference..', options=options)
 
@@ -164,7 +109,7 @@ class FillButton(discord.ui.Button):
         super().__init__(label="Set to Fill", style=discord.ButtonStyle.green)
 
     async def callback(self, interaction: discord.Interaction):
-        save_preference(interaction, "Fill - 11111")
+        save_preference(interaction, "Fill - 44444")
         await interaction.response.send_message(f'Set preference to "Fill"', ephemeral=True)
 
 #Dropdown view for rendering all dropdowns for player role preferences
@@ -208,7 +153,7 @@ class CheckinButtons(discord.ui.View):
             return "Is already checked in"
         await member.add_roles(player)
         await interaction.response.edit_message(view = self)
-        await interaction.followup.send(f'You have checked in as "{riotID}"!  Be sure to check your /preferences and update your /riotID if needed.', ephemeral = True)
+        await interaction.followup.send(f'You have checked in with Riot ID "{riotID}"!  Be sure to check your /roleselect and update your /riotID if needed.', ephemeral = True)
         return "Checked in"        
 
     """
@@ -411,7 +356,7 @@ def check_database():
             , discordName nvarchar(64)			-- Player's Discord name
             , riotID nvarchar(64)				-- Player's LOL name
             , lolRank varchar(32)				-- Player's LOL rank
-            , preferences char(5)				-- Player's encoded lane preferences (0 = no, 1 = neutral, 2 = prefer) in order of Top, Jungle, Mid, ADC, and Support
+            , preferences char(5)				-- Player's encoded lane preferences (1H-5L) in order of Top, Jungle, Mid, ADC, and Support
             , toxicity int                      -- Player's toxicity score
             );""")
         
@@ -419,7 +364,7 @@ def check_database():
             gameID bigint PRIMARY KEY		    -- Unique ID to identify the game
             , gameDate date						-- Date of the game
             , gameNumber tinyint				-- Game number (1, 2, 3)	
-            , gameLobby tinyint					-- Game Lobby (1, 2) 
+            , gameLobby tinyint					-- Game Lobby (1, 2, 3) per 10 players
             , gameWinner varchar(4)				-- Team that won this game (Blue/Red)
             , isComplete bit                    -- Used to track incomplete games
             );""")
@@ -581,7 +526,7 @@ def create_teams(self, player_users):
     #             matched_players.append(Player(tier=row[4],username=row[1],discord_id=row[0], top_priority=top_prio, jungle_priority=jg_prio, mid_priority=mid_prio, bot_priority=bot_prio, support_priority=supp_prio))    
     return
 
-#Method to update LOL ID
+#Method to update Riot ID
 def update_riotid(interaction: discord.Interaction, id):
     try:
         dbconn = sqlite3.connect("bot.db")
@@ -784,10 +729,10 @@ async def riotid(interaction, id: str):
 #Command to start check-in
 @tree.command(
     name = 'checkin',
-    description = 'Initiate Tournament Check-In.',
+    description = 'Initiate Tournament Check-In.  Add timeout in seconds or use the default of 900 - 15 minutes.',
     guild = discord.Object(GUILD))
-async def checkin(interaction):
-    view = CheckinButtons()
+async def checkin(interaction, timeout: int=900):
+    view = CheckinButtons(timeout)
     await interaction.response.send_message('Check-In for the tournament has started! You have 15 minutes to check-in.', view = view)
 
 #Command to set preferences to fill (11111 is used)
@@ -802,12 +747,12 @@ async def fill(interaction):
 
 #Command to update position preferences
 @tree.command(
-        name = 'preferences',
-        description= 'Update your position preferences.',
+        name = 'roleselect',
+        description= 'Update your role preferences.',
         guild = discord.Object(GUILD))
-async def preferences(interaction):
+async def roleselect(interaction):
     register_player(interaction)
-    embed = discord.Embed(title="Select Your Preferences", 
+    embed = discord.Embed(title="Select your role preferences", 
                           description=get_preferences(interaction), color=0x00ff00)
     view = DropdownView()
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
