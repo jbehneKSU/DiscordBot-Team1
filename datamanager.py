@@ -6,6 +6,15 @@ try:
     dbconn = sqlite3.connect("bot.db")
     dbconn.row_factory = sqlite3.Row
     cur = dbconn.cursor()
+
+    cur.execute("""UPDATE Player SET discordID = REPLACE( REPLACE( discordID, CHAR(13), ''), CHAR(10), ''),
+                discordName = REPLACE( REPLACE( discordName, CHAR(13), ''), CHAR(10), ''),
+                lolID = REPLACE( REPLACE( lolID, CHAR(13), ''), CHAR(10), ''),
+                lolRank = REPLACE( REPLACE( lolRank, CHAR(13), ''), CHAR(10), ''),
+                preferences = REPLACE( REPLACE( preferences, CHAR(13), ''), CHAR(10), '')
+                """)
+    dbconn.commit()
+
 except sqlite3.Error as e:
     print(e)       
     exit

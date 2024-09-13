@@ -17,14 +17,14 @@ Things to do for milestone 1 by 9/20
 *   Set the /win command to pass just the team and update players that way
 
 Milestone 2:
-*   Matchmaking - look at ChatGPT/Gemini integration to perform the matchmaking
+*   Matchmaking - look at ChatGPT/Gemini integration to perform the matchmaking, if not included in M1
 *   Look at command security - admin vs non-admin ability to execute 
 *       Example: /checkin should be admin only while /preferences is for everyone
 *       This will require creating an "Admin" role in the channel and granting it admin privileges
 *   /export to export the current points, player preferences & rank, and games played similar to existing sheet
 *   Set the selected /preference to the existing value
 *   Riot games API to get and update player LOL rank
-*   MVP functionality
+*   MVP voting functionality
 *   /activegames command to see open games
 
 Milestone 3:
