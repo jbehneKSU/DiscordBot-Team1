@@ -1,31 +1,53 @@
 '''
-What is working
-*   /checkin command is complete
-*   /volunteer command is complete
-*   /toxicity command is complete
-*   /preferences command is complete
-*   /fill command is complete
-*   register_player will update the player's discord name if it is different
+What is working/done
+*   All backend work is being done in a SQLITE database
+*   Code is generally using the 18 digit Discord ID to track users
+*   /checkin command is complete, prompts the player to update preferences and riotID
+*   /volunteer command is complete, no changes needed
+*   /toxicity command is working, but may need to change the ID passed in
+*   /preferences command is complete and displays current preferences when called
+*   /fill command is complete, setting all preferences to 1
+*   register_player function will update the player's discord name if it is different
+*       this function is called when using the check in button and /preferences command
 
 Things to do for milestone 1 by 9/20
-*   Do all processing in the SQLITE database and create an export to sheets function later
-*   Modify all code that looks up player by name to use the unique Discord ID instead
-*   Function to update discord name in database if different than current name (using unique ID), called at checkin?
-*   Interface for users to change their LOL name and preferences, hopefully an embed the player can execute
-*   Better storage for preferences, maybe a string of numbers 0-4 for each position, like 10324?
+*C   Do all processing in the SQLITE database and create an export to sheets function later
+*C   Modify all code that looks up player by name to use the unique Discord ID instead
+*C   Function to update discord name in database if different than current name (using unique ID), called at checkin?
+*   Interface for users to change their Riot name and preferences, hopefully an embed the player can execute
+*   Preferences stored as an encoded string where 0 = never through 4 = most wanted
+*       Position of characters corresponds to Top/Jng/Mid/ADC/Sup in that order
+*   Set the selected /preference to the existing value
 *   Matchmaking - current algorithm is slow, see if it can be coded better.
-*   Set the /win command to pass just the team and update players that way
+*       /matchmake command is the current implementation
+*       This will need to create the game # in the Games table, plus 1 lobby for every 10 players
+*       The teams will need to be written to the GameDetail table
+
+* Additional work added 9/13
+•	For preferences, reverse and drop the 0, so 1 = best and 5 = worst on preference
+•	Add the ability to launch preferences embed with a button
+•	Change lolid to riotID to be more clear to players
+•	Check for # in tag – a riot ID consists of two parts with a # symbol so there should be some checking there
+•	Explain riotID format to user, be clear that the format should be in the correct Riot ID format.
+•	Change /preference command name to /roleselect
+•	Interface for the player to understand the bot, like a /help embed
+•	Add parms for checkin timeout, Kylie would like to be able to set this
+•	Expect Riot API to take a week to be approved for access
+
 
 Milestone 2:
+*   Set the /win command to pass just the game number, lobby, and team and update GameDetail
 *   Matchmaking - look at ChatGPT/Gemini integration to perform the matchmaking, if not included in M1
+*       Gemini is already working well, the prompt may need some more tweaks for accuracy though
+*       ChatGPT would be a good alternative to consider
 *   Look at command security - admin vs non-admin ability to execute 
 *       Example: /checkin should be admin only while /preferences is for everyone
 *       This will require creating an "Admin" role in the channel and granting it admin privileges
 *   /export to export the current points, player preferences & rank, and games played similar to existing sheet
-*   Set the selected /preference to the existing value
 *   Riot games API to get and update player LOL rank
 *   MVP voting functionality
 *   /activegames command to see open games
+*   Add ability for admin to make changes to the teams
 
 Milestone 3:
 *   
@@ -178,7 +200,7 @@ class CheckinButtons(discord.ui.View):
         player = get(interaction.guild.roles, name = 'Player')
         member = interaction.user
 
-        lolname = register_player(interaction)
+        riotID = register_player(interaction)
 
         if player in member.roles:
             await interaction.response.edit_message(view = self)
@@ -186,7 +208,7 @@ class CheckinButtons(discord.ui.View):
             return "Is already checked in"
         await member.add_roles(player)
         await interaction.response.edit_message(view = self)
-        await interaction.followup.send(f'You have checked in as "{lolname}"!  Be sure to check your /preferences and update your /lolid if needed.', ephemeral = True)
+        await interaction.followup.send(f'You have checked in as "{riotID}"!  Be sure to check your /preferences and update your /riotID if needed.', ephemeral = True)
         return "Checked in"        
 
     """
@@ -352,14 +374,14 @@ def register_player(interaction: discord.Interaction):
         data = cur.fetchone()
 
         if data[0] == 0:
-            query = "INSERT INTO Player (discordID, discordName, lolID, lolRank, preferences, toxicity) VALUES (?, ?, '', 'Bronze', '11111', 0)"
+            query = "INSERT INTO Player (discordID, discordName, riotID, lolRank, preferences, toxicity) VALUES (?, ?, '', 'Bronze', '11111', 0)"
             args = (member.id, member.name,)
             cur.execute(query, args)
             dbconn.commit()
 
             return "n/a"
         else:
-            query = 'SELECT discordName, lolID FROM Player WHERE discordID = ?'
+            query = 'SELECT discordName, riotID FROM Player WHERE discordID = ?'
             args = (member.id,)
             cur.execute(query, args)
             result = cur.fetchone()
@@ -387,7 +409,7 @@ def check_database():
         cur.execute("""CREATE TABLE IF NOT EXISTS Player (
             discordID bigint PRIMARY KEY     	-- Unique Discord identifier for the player, will serve as PK
             , discordName nvarchar(64)			-- Player's Discord name
-            , lolID nvarchar(64)				-- Player's LOL name
+            , riotID nvarchar(64)				-- Player's LOL name
             , lolRank varchar(32)				-- Player's LOL rank
             , preferences char(5)				-- Player's encoded lane preferences (0 = no, 1 = neutral, 2 = prefer) in order of Top, Jungle, Mid, ADC, and Support
             , toxicity int                      -- Player's toxicity score
@@ -424,47 +446,11 @@ def check_database():
             INNER JOIN Games g ON g.gameID = gd.gameID
             GROUP BY p.discordID)
 
-            SELECT t.discordID, p.discordName, lolName, Participation, Wins, MVPs, toxicity, GamesPlayed
+            SELECT t.discordID, p.discordName, riotID, Participation, Wins, MVPs, toxicity, GamesPlayed
                 , CASE WHEN Wins = 0 OR GamesPlayed = 0 THEN 0 ELSE CAST(Wins AS float) / CAST(GamesPlayed AS float) END WinRatio
                 , (Participation + Wins + MVPs - Toxicity + GamesPlayed) TotalPoints
             FROM totals t
             INNER JOIN Player p ON p.discordID = t.discordID""")        
-
-        cur.execute("""CREATE VIEW IF NOT EXISTS vw_Preferences AS
-            SELECT * 
-                , CASE SUBSTRING(preferences, 1, 1) 
-                    WHEN '0' THEN 'Absolutely Not'
-                    WHEN '1' THEN 'Low'
-                    WHEN '2' THEN 'Medium'
-                    WHEN '3' THEN 'Higher'
-                    WHEN '4' THEN 'Must Have' END TopPreference
-                , CASE SUBSTRING(preferences, 2, 1) 
-                    WHEN '0' THEN 'Absolutely Not'
-                    WHEN '1' THEN 'Low'
-                    WHEN '2' THEN 'Medium'
-                    WHEN '3' THEN 'Higher'
-                    WHEN '4' THEN 'Must Have' END JunglePreference
-                , CASE SUBSTRING(preferences, 3, 1) 
-                    WHEN '0' THEN 'Absolutely Not'
-                    WHEN '1' THEN 'Low'
-                    WHEN '2' THEN 'Medium'
-                    WHEN '3' THEN 'Higher'
-                    WHEN '4' THEN 'Must Have' END MidPreference
-                , CASE SUBSTRING(preferences, 4, 1) 
-                    WHEN '0' THEN 'Absolutely Not'
-                    WHEN '1' THEN 'Low'
-                    WHEN '2' THEN 'Medium'
-                    WHEN '3' THEN 'Higher'
-                    WHEN '4' THEN 'Must Have' END ADCPreference
-                , CASE SUBSTRING(preferences, 5, 1) 
-                    WHEN '0' THEN 'Absolutely Not'
-                    WHEN '1' THEN 'Low'
-                    WHEN '2' THEN 'Medium'
-                    WHEN '3' THEN 'Higher'
-                    WHEN '4' THEN 'Must Have' END SupPreference
-            FROM Player
-            ORDER BY discordName
-            """)
 
         print ("Database is configured")
     except sqlite3.Error as e:
@@ -596,11 +582,11 @@ def create_teams(self, player_users):
     return
 
 #Method to update LOL ID
-def update_lolid(interaction: discord.Interaction, id):
+def update_riotid(interaction: discord.Interaction, id):
     try:
         dbconn = sqlite3.connect("bot.db")
         cur = dbconn.cursor()
-        query = f"UPDATE Player SET lolID = ? WHERE discordID = ?"
+        query = f"UPDATE Player SET riotID = ? WHERE discordID = ?"
         args = (id, interaction.user.id)
         cur.execute(query, args)
         dbconn.commit()
@@ -788,11 +774,11 @@ async def calculate_score_diff(team1, team2):
 
 #Command to update player's league of legends ID
 @tree.command(
-    name = 'lolid',
+    name = 'riotid',
     description = 'Initiate Tournament Check-In.',
     guild = discord.Object(GUILD))
-async def lolid(interaction, id: str):
-    update_lolid(interaction, id)
+async def riotid(interaction, id: str):
+    update_riotid(interaction, id)
     await interaction.response.send_message('Your League of Legends ID has been updated.', ephemeral=True)
 
 #Command to start check-in
