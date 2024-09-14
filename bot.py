@@ -17,6 +17,8 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from discord.ext import commands
 import sqlite3
+import random
+from operator import itemgetter
 
 load_dotenv(find_dotenv())
 intents = discord.Intents.default()
@@ -111,6 +113,13 @@ class FillButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         save_preference(interaction, "Fill - 44444")
         await interaction.response.send_message(f'Set preference to "Fill"', ephemeral=True)
+
+##Help view - provide instructions, commands, and button choices
+## Add button to launch preferences, launch fill, and decribe functions, etc
+# class HelpView(discord.ui.view):
+#     def __init__(self):
+#         super().__init__()
+#         return
 
 #Dropdown view for rendering all dropdowns for player role preferences
 class DropdownView(discord.ui.View):
@@ -240,6 +249,8 @@ class volunteerButtons(discord.ui.View):
 
 #endregion CLASSES
 
+
+
 #region METHODS
 
 #Method to return string of preferences for the /preferences embed
@@ -356,7 +367,7 @@ def check_database():
             , discordName nvarchar(64)			-- Player's Discord name
             , riotID nvarchar(64)				-- Player's LOL name
             , lolRank varchar(32)				-- Player's LOL rank
-            , preferences char(5)				-- Player's encoded lane preferences (1H-5L) in order of Top, Jungle, Mid, ADC, and Support
+            , preferences varchar(512)			-- Player's encoded lane preferences (1H-5L) in order of Top, Jungle, Mid, ADC, and Support
             , toxicity int                      -- Player's toxicity score
             );""")
         
@@ -537,7 +548,7 @@ def update_riotid(interaction: discord.Interaction, id):
         dbconn.commit()
             
     except sqlite3.Error as e:
-        print (f'Database error occurred updating LOL ID: {e}')
+        print (f'Database error occurred updating Riot ID: {e}')
         return e
 
     finally:
@@ -545,186 +556,79 @@ def update_riotid(interaction: discord.Interaction, id):
         dbconn.close()     
 
 
+def assign_roles(players):
+    position_map = ["Top", "Jungle", "Mid", "ADC", "Support"]
+    positions = {position: [] for position in position_map}
+    
+    for player in players:
+        preferences = list(player[2])
+        for i, pos in enumerate(position_map):
+            positions[pos].append((player, int(preferences[i])))
 
-#Method to write values from a Google Sheets spreadsheet.
-def get_values_matchmaking(range_name):
-    #Gets the values from the specified cells in the spreadsheet.
-    try:
-        service = build('sheets', 'v4', credentials = creds)
-        sheet = service.spreadsheets()
-        result = (
-            sheet.values()
-            .get(spreadsheetId = SHEETS_ID, range = range_name)
-            .execute()
-        )
-        values = result.get('values', [])
-        return values
-    except HttpError as error:
-        print(f'An error occured: {error}')
-        return error
+    for pos in positions:
+        positions[pos] = sorted(positions[pos], key=itemgetter(1))
+    
+    return positions
 
-#Method to write values from a Google Sheets spreadsheet.
-def update_points(interaction, player_users, volunteer_users):
-    gs = gspread.oauth()
-    range_name = 'A1:J100'
-    sh = gs.open(SHEETS_NAME)
-    player = get(interaction.guild.roles, name = 'Player')
-    volunteer = get(interaction.guild.roles, name = 'Volunteer')
-    try:
-        values = sh.sheet1.get_values(range_name)
-        for i, row in enumerate(values, start = 1):
-            for player in player_users:
-                if player.lower() == row[0].lower():
-                    player_participation = int(row[2])
-                    sh.sheet1.update_cell(i, 3, player_participation + 1)
-                    current_matches = int(row[7])
-                    sh.sheet1.update_cell(i, 8, current_matches + 1)
-            for volunteer in volunteer_users:
-                if volunteer.lower() == row[0].lower():
-                    volunteer_participation = int(row[2])
-                    sh.sheet1.update_cell(i, 3, volunteer_participation + 1)
-    except HttpError as e:
-        (f'An error occured: {e}')
-        return e
 
-#
-def check_player(interaction, discord_username):
-    gs = gspread.oauth()
-    range_name = 'A1:J100'
-    sh = gs.open(SHEETS_NAME)
-    try:
-        values = sh.sheet1.get_values(range_name)
-        found_user = False
-        for i, row in enumerate(values, start = 1):
-            if discord_username.lower() == row[0].lower():
-                found_user = True
-        return found_user   
-    except HttpError as e:
-        (f'An error occured: {e}')
-        return e
+def balanced_teams(players):
+    positions = assign_roles(players)
+    team_red = {}
+    team_blue = {}
 
-#   
-def update_wins(interaction, winners):
-    gs = gspread.oauth()
-    range_name = 'A1:J100'
-    sh = gs.open(SHEETS_NAME)
-    try:
-        wins = []
-        for str in winners:
-            wins.append(str.lower())
+    for position, candidates in positions.items():
+        for candidate in candidates:
+            player = candidate[0]
+            if player[0] in team_red.values():
+                continue
+            if player[0] in team_blue.values():
+                continue
 
-        values = sh.sheet1.get_values(range_name)
-        found_users = 0
+            if position in team_red:
+                team_blue[position] = player[0]
+            else:
+                team_red[position] = player[0]
 
-        for i, row in enumerate(values, start = 1):
-            for w in wins:
-                if w == row[0].lower():
-                    found_users += 1
-        if found_users == 5:
-            for i, row in enumerate(values, start = 1):
-                for w in wins:
-                    if w == row[0].lower():
-                        user_win = int(row[3])
-                        sh.sheet1.update_cell(i, 4, user_win + 1)
-            return True
-        else:
-            return False 
-    except HttpError as e:
-        (f'An error occured: {e}')
-        return e
+    return team_red, team_blue
 
-#creates 2 best team (1 match) which has the lowest score
-async def create_best_teams_helper(players):
-    if len(players) != 10:
-        raise ValueError("The length of players should be exactly 10.")
 
-    lowest_score = float('inf')
-    lowest_score_teams = []
+def check_balance(team_red, team_blue, players):
+    rank_order = ['Bronze', 'Silver', 'Gold', 'Platinum', 'Emerald', 'Diamond', 'Master', 'Grandmaster', 'Challenger']
+    position_map = ["Top", "Jungle", "Mid", "ADC", "Support"]
 
-    for team1_players in itertools.permutations(players, len(players) // 2):
-        team1 = Team(*team1_players)
-        team2_players = [player for player in players if player not in team1_players]
-        for team2_players_permutations in itertools.permutations(team2_players, len(players) // 2):
-            team2 = Team(*team2_players_permutations)
+    player_ranks = {player[0]: player[1] for player in players}
+    
+    for position in position_map:
+        red_rank = player_ranks[team_red[position]]
+        blue_rank = player_ranks[team_blue[position]]
+        if abs(rank_order.index(red_rank) - rank_order.index(blue_rank)) > 1:
+            return False
+    return True
 
-            t1_priority=0
-            t1_priority+=team1.top_laner.top_priority**2
-            t1_priority+=team1.jungle.jungle_priority**2
-            t1_priority+=team1.mid_laner.mid_priority**2
-            t1_priority+=team1.bot_laner.bot_priority**2
-            t1_priority+=team1.support.support_priority**2
-        
-            t2_priority=0
-            t2_priority+=team2.top_laner.top_priority**2
-            t2_priority+=team2.jungle.jungle_priority**2
-            t2_priority+=team2.mid_laner.mid_priority**2
-            t2_priority+=team2.bot_laner.bot_priority**2
-            t2_priority+=team2.support.support_priority**2
-            
-            diff = (int(team1.top_laner.tier) - int(team2.top_laner.tier)) ** 2 + \
-            (int(team1.mid_laner.tier) - int(team2.mid_laner.tier)) ** 2 + \
-            (int(team1.bot_laner.tier) - int(team2.bot_laner.tier)) ** 2 + \
-            (int(team1.jungle.tier) - int(team2.jungle.tier)) ** 2 + \
-            (int(team1.support.tier) - int(team2.support.tier)) ** 2
-            
-            score = (t1_priority + t2_priority) / 2.5 + diff
 
-            if score < lowest_score:
-                lowest_score = score
-                lowest_score_teams = [(team1, team2, t1_priority, t2_priority, diff)]
-            
-            #This can be kept if we want to return multiple games of the same score.
-            #elif score == lowest_score:
-            #lowest_score_teams.append((team1, team2, team1_priority, team2_priority, diff))
+def create_teams(players):
+    team_red, team_blue = balanced_teams(players)
+    while not check_balance(team_red, team_blue, players):
+        random.shuffle(players)
+        team_red, team_blue = balanced_teams(players)
+    
+    return team_red, team_blue
 
-    return lowest_score_teams
-
-#creates best matches for all players
-async def create_best_teams(players):
-    if len(players)%10!=0:
-        return 'Only call this method with 10, 20 30, etc players'
-    sorted_players = sorted(players, key=lambda x: x.tier)
-    group_size = 10
-    num_groups = (len(sorted_players) + group_size - 1) // group_size
-    best_teams = []
-
-    for i in range(num_groups):
-        group = sorted_players[i * group_size: (i + 1) * group_size]
-        best_teams.extend(await create_best_teams_helper(group))
-
-    return best_teams
-
-#calculates the role priorities for all players any given team
-async def calculate_team_priority(top,jungle,mid,bot,support):
-    priority=0
-    priority+=top.top_priority**2
-    priority+=jungle.jungle_priority**2
-    priority+=mid.mid_priority**2
-    priority+=bot.bot_priority**2
-    priority+=support.support_priority**2
-    return priority
-
-#calculates the score difference in tier for any 2 given teams
-async def calculate_score_diff(team1, team2):
-    diff = (team1.top_laner.tier - team2.top_laner.tier) ** 2 + \
-                     (team1.mid_laner.tier - team2.mid_laner.tier) ** 2 + \
-                     (team1.bot_laner.tier - team2.bot_laner.tier) ** 2 + \
-                     (team1.jungle.tier - team2.jungle.tier) ** 2 + \
-                     (team1.support.tier - team2.support.tier) ** 2
-    return diff
 
 #endregion METHODS
+
+
 
 #region COMMANDS
 
 #Command to update player's league of legends ID
 @tree.command(
     name = 'riotid',
-    description = 'Initiate Tournament Check-In.',
+    description = 'Update your Riot ID <Game Name><#Tagline>',
     guild = discord.Object(GUILD))
 async def riotid(interaction, id: str):
     update_riotid(interaction, id)
-    await interaction.response.send_message('Your League of Legends ID has been updated.', ephemeral=True)
+    await interaction.response.send_message(f'Your League of Legends ID has been updated to {id}.', ephemeral=True)
 
 #Command to start check-in
 @tree.command(
@@ -735,14 +639,14 @@ async def checkin(interaction, timeout: int=900):
     view = CheckinButtons(timeout)
     await interaction.response.send_message('Check-In for the tournament has started! You have 15 minutes to check-in.', view = view)
 
-#Command to set preferences to fill (11111 is used)
+#Command to set preferences to fill (44444 is used)
 @tree.command(
         name = 'fill',
         description= 'Set your position preferences to fill.',
         guild = discord.Object(GUILD))
 async def fill(interaction):
     register_player(interaction)
-    save_preference(interaction, "Fill - 11111")
+    save_preference(interaction, "Fill - 44444")
     await interaction.response.send_message("Your preference has been set to fill", ephemeral=True)
 
 #Command to update position preferences
@@ -779,23 +683,6 @@ async def toxicity(interaction: discord.Interaction, discord_username: str):
             await interaction.followup.send(f"{discord_username}'s toxicity point has been updated.")
         else:
             await interaction.followup.send(f"{discord_username} could not be found.")
-    except Exception as e:
-        print(f'An error occured: {e}')
-
-@tree.command(
-        name = 'wins',
-        description = "Adds a point to each winner's 'win' points.",
-        guild = discord.Object(GUILD))
-async def wins(interaction: discord.Interaction, player_1: str, player_2: str, player_3: str, player_4: str, player_5: str):
-    try:
-        winners = [player_1, player_2, player_3, player_4, player_5]
-        await interaction.response.defer(ephemeral = True)
-        await asyncio.sleep(1)
-        found_users = update_wins(interaction = interaction, winners = winners)
-        if found_users:
-            await interaction.followup.send("All winner's 'win' points have been updated.")
-        else:
-            await interaction.followup.send("At least one of the winner's could not be found.")
     except Exception as e:
         print(f'An error occured: {e}')
 
@@ -877,46 +764,23 @@ async def players(interaction: discord.Interaction):
         print(f'An error occured: {e}')
 
 @tree.command(
-        name='points',
-        description='Print data from specific cell value',
-        guild = discord.Object(GUILD))
-async def points(interaction: discord.Interaction):
-    try:
-        #Finds all players in discord, adds them to a list
-        player_users = []
-        player = get(interaction.guild.roles, name = 'Player')
-        for user in interaction.guild.members:
-            if player in user.roles:
-                player_users.append(user.name)
-        
-        #Finds all volunteers in discord, adds them to a list
-        volunteer_users = []
-        volunteer = get(interaction.guild.roles, name = 'Volunteer')
-        for user in interaction.guild.members:
-            if volunteer in user.roles:
-                volunteer_users.append(user.name)
-        
-        await interaction.response.defer(ephemeral = True)
-        await asyncio.sleep(1)
-        update_points(interaction = interaction, player_users = player_users, volunteer_users = volunteer_users)
-        await interaction.followup.send('Updated spreadsheet!')
-
-    except Exception as e:
-        print(f'An error occured: {e}')
-
-@tree.command(
     name = 'matchmake',
     description = "Form teams for all players enrolled in the game.",
     guild = discord.Object(GUILD))
 async def matchmake(interaction: discord.Interaction, match_number: int):
     try:
+        #Finds all players in discord, adds them to a list
         player_role = get(interaction.guild.roles, name='Player')
         player_users = [member.id for member in player_role.members]
 
+        #Finds all volunteers in discord, adds them to a list
         volunteer_role = get(interaction.guild.roles, name='Volunteer')
         volunteer_users = [member.id for member in volunteer_role.members]
 
-        create_teams(player_users) #temp test
+        # Check for player count % 10 = 0
+        # If > 10 players, sort players by rank
+        # Set lobby count = player count / 10
+        # Iterate lobby count, create both teams
 
         if len(player_users) % 10 != 0:
             await interaction.followup.send('There is not a multiple of 10 players, please see /players', ephemeral = True)
@@ -937,138 +801,10 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
             cur.execute(query, args)
             dbconn.commit()
 
-        create_teams(player_users)
-        # values = get_values_matchmaking('Player Tiers!A1:E100')
-
-        # matched_players = []
-        # for i, row in enumerate(values):
-        #     for player in player_users:
-        #         if player.lower() == row[0].lower():
-        #             top_prio = 5
-        #             jg_prio = 5
-        #             mid_prio = 5
-        #             bot_prio = 5
-        #             supp_prio = 5
-        #             if row[3] == 'fill':
-        #                 top_prio = 1
-        #                 jg_prio = 1
-        #                 mid_prio = 1
-        #                 bot_prio = 1
-        #                 supp_prio = 1
-        #             roles = row[3].split('/')
-        #             index = 1
-        #             for i, role in enumerate(roles):
-        #                 if role.lower() == 'top':
-        #                     top_prio = index
-        #                 if role.lower() == 'jg' or role.lower() == 'jung' or role.lower() == 'jungle':
-        #                     jg_prio = index
-        #                 if role.lower() == 'mid':
-        #                     mid_prio = index
-        #                 if role.lower() == 'bot' or role.lower() == 'adc':
-        #                     bot_prio = index
-        #                 if role.lower() == 'supp' or role.lower() == 'support':
-        #                     supp_prio = index
-        #                 index += 1
-        #             matched_players.append(Player(tier=row[4],username=row[1],discord_id=row[0], top_priority=top_prio, jungle_priority=jg_prio, mid_priority=mid_prio, bot_priority=bot_prio, support_priority=supp_prio))
-        # if len(matched_players) % 10!=0:
-        #     if len(matched_players)!=len(player_users):
-        #         await interaction.followup.send("Error: The number of players must be a multiple of 10. A player could also not be found in the spreadsheet.")
-        #         return
-        #     await interaction.followup.send("Error: The number of players must be a multiple of 10.")
-        #     return
-        # if len(matched_players)!=len(player_users):
-        #     await interaction.followup.send('A player could not be found on the spreadsheet.')
-        #     return
-        # best_teams = await create_best_teams(matched_players)
-
-        best_teams = ""
-
-        embedLobby2 = None
-        embedLobby3 = None
-        for i, (team1, team2, team1_priority, team2_priority, diff) in enumerate(best_teams, start=1):
-            if i == 1:
-                embedLobby1 = discord.Embed(color = discord.Color.from_rgb(255, 198, 41), title = f'Lobby 1 - Match: {match_number}')
-                embedLobby1.add_field(name = 'Roles', value = '')
-                embedLobby1.add_field(name = 'Team 1', value = '')
-                embedLobby1.add_field(name = 'Team 2', value = '')
-                embedLobby1.add_field(name = '', value = 'Top Laner')
-                embedLobby1.add_field(name = '', value = team1.top_laner.username)
-                embedLobby1.add_field(name = '', value = team2.top_laner.username)
-                embedLobby1.add_field(name = '', value = 'Jungle')
-                embedLobby1.add_field(name = '', value = team1.jungle.username)
-                embedLobby1.add_field(name = '', value = team2.jungle.username)
-                embedLobby1.add_field(name = '', value = 'Mid Laner')
-                embedLobby1.add_field(name = '', value = team1.mid_laner.username)
-                embedLobby1.add_field(name = '', value = team2.mid_laner.username)
-                embedLobby1.add_field(name = '', value = 'Bot Laner')
-                embedLobby1.add_field(name = '', value = team1.bot_laner.username)
-                embedLobby1.add_field(name = '', value = team2.bot_laner.username)
-                embedLobby1.add_field(name = '', value = 'Support')
-                embedLobby1.add_field(name = '', value = team1.support.username)
-                embedLobby1.add_field(name = '', value = team2.support.username)
-            if i == 2:
-                embedLobby2 = discord.Embed(color = discord.Color.from_rgb(255, 198, 41), title = f'Lobby 2 - Match: {match_number}')
-                embedLobby2.add_field(name = 'Roles', value = '')
-                embedLobby2.add_field(name = 'Team 1', value = '')
-                embedLobby2.add_field(name = 'Team 2', value = '')
-                embedLobby2.add_field(name = '', value = 'Top Laner')
-                embedLobby2.add_field(name = '', value = team1.top_laner.username)
-                embedLobby2.add_field(name = '', value = team2.top_laner.username)
-                embedLobby2.add_field(name = '', value = 'Jungle')
-                embedLobby2.add_field(name = '', value = team1.jungle.username)
-                embedLobby2.add_field(name = '', value = team2.jungle.username)
-                embedLobby2.add_field(name = '', value = 'Mid Laner')
-                embedLobby2.add_field(name = '', value = team1.mid_laner.username)
-                embedLobby2.add_field(name = '', value = team2.mid_laner.username)
-                embedLobby2.add_field(name = '', value = 'Bot Laner')
-                embedLobby2.add_field(name = '', value = team1.bot_laner.username)
-                embedLobby2.add_field(name = '', value = team2.bot_laner.username)
-                embedLobby2.add_field(name = '', value = 'Support')
-                embedLobby2.add_field(name = '', value = team1.support.username)
-                embedLobby2.add_field(name = '', value = team2.support.username)
-            if i == 3:
-                embedLobby3 = discord.Embed(color = discord.Color.from_rgb(255, 198, 41), title = f'Lobby 2 - Match: {match_number}')
-                embedLobby3.add_field(name = 'Roles', value = '')
-                embedLobby3.add_field(name = 'Team 1', value = '')
-                embedLobby3.add_field(name = 'Team 2', value = '')
-                embedLobby3.add_field(name = '', value = 'Top Laner')
-                embedLobby3.add_field(name = '', value = team1.top_laner.username)
-                embedLobby3.add_field(name = '', value = team2.top_laner.username)
-                embedLobby3.add_field(name = '', value = 'Jungle')
-                embedLobby3.add_field(name = '', value = team1.jungle.username)
-                embedLobby3.add_field(name = '', value = team2.jungle.username)
-                embedLobby3.add_field(name = '', value = 'Mid Laner')
-                embedLobby3.add_field(name = '', value = team1.mid_laner.username)
-                embedLobby3.add_field(name = '', value = team2.mid_laner.username)
-                embedLobby3.add_field(name = '', value = 'Bot Laner')
-                embedLobby3.add_field(name = '', value = team1.bot_laner.username)
-                embedLobby3.add_field(name = '', value = team2.bot_laner.username)
-                embedLobby3.add_field(name = '', value = 'Support')
-                embedLobby3.add_field(name = '', value = team1.support.username)
-                embedLobby3.add_field(name = '', value = team2.support.username)
-
-        #Embed to display all users who volunteered to sit out.
-        embedVol = discord.Embed(color = discord.Color.blurple(), title = 'Volunteers - Match: ' + match_number)
-        for vol in volunteer_users:
-            embedVol.add_field(name = '', value = vol)
-        if not volunteer_users:
-            embedVol.add_field(name = '', value = 'No volunteers.')
-
-        if embedLobby2 == None:
-            await interaction.followup.send( embeds = [embedVol, embedLobby1])
-        elif embedLobby2 == None and not volunteer_users:
-            await interaction.followup.send( embeds = embedLobby1)
-        elif embedLobby3 == None:
-            await interaction.followup.send( embeds = [embedVol, embedLobby1, embedLobby2])
-        elif embedLobby3 == None and not volunteer_users:
-            await interaction.followup.send( embeds = [embedLobby1, embedLobby2])
-        elif volunteer_users == None:
-            await interaction.followup.send( embeds = [embedLobby1, embedLobby2, embedLobby3])
-        else:
-            await interaction.followup.send( embeds = [embedVol, embedLobby1, embedLobby2, embedLobby3])
-        
     except Exception as e:
         print(f'An error occured: {e}')
+
+
 
 """
 @tree.command(
@@ -1090,5 +826,6 @@ async def voteMVP(interaction: discord.Interaction, player: str):
 #endregion COMMANDS
 
 #logging.getLogger('discord.gateway').addFilter(GatewayEventFilter())
+
 #starts the bot
 client.run(TOKEN)

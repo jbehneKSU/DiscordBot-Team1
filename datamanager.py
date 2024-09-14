@@ -9,7 +9,7 @@ try:
 
     cur.execute("""UPDATE Player SET discordID = REPLACE( REPLACE( discordID, CHAR(13), ''), CHAR(10), ''),
                 discordName = REPLACE( REPLACE( discordName, CHAR(13), ''), CHAR(10), ''),
-                lolID = REPLACE( REPLACE( lolID, CHAR(13), ''), CHAR(10), ''),
+                riotID = REPLACE( REPLACE( riotID, CHAR(13), ''), CHAR(10), ''),
                 lolRank = REPLACE( REPLACE( lolRank, CHAR(13), ''), CHAR(10), ''),
                 preferences = REPLACE( REPLACE( preferences, CHAR(13), ''), CHAR(10), '')
                 """)
@@ -25,8 +25,8 @@ def focus_next_widget(event):
     return("break")
 
 def saveplayer():
-    cmd = "UPDATE Player SET discordName = ?, discordID = ?, lolID = ?, lolRank = ?, preferences = ?, toxicity = ? WHERE discordID = ?"
-    args = (txtDiscordName.get(1.0, END), txtDiscordID.get(1.0, END), txtlolID.get(1.0, END), txtlolRank.get(1.0, END), 
+    cmd = "UPDATE Player SET discordName = ?, discordID = ?, riotID = ?, lolRank = ?, preferences = ?, toxicity = ? WHERE discordID = ?"
+    args = (txtDiscordName.get(1.0, END), txtDiscordID.get(1.0, END), txtriotID.get(1.0, END), txtlolRank.get(1.0, END), 
             txtpreferences.get(1.0, END), txtToxicity.get(1.0, END), result[idx]["discordID"])
     dbconn.execute(cmd, args)
     dbconn.commit()
@@ -35,7 +35,7 @@ def saveplayer():
 def loadPlayers():
     cleartext()
     listbox.delete(0, END)
-    cur.execute('''SELECT discordID, COALESCE(discordName, '') discordName, COALESCE(lolID, '') lolID, 
+    cur.execute('''SELECT discordID, COALESCE(discordName, '') discordName, COALESCE(riotID, '') riotID, 
 	COALESCE(lolRank, '') lolRank, COALESCE(preferences, '') preferences, COALESCE(toxicity, '') toxicity
 	FROM Player
 	ORDER BY discordName''')
@@ -46,7 +46,7 @@ def loadPlayers():
         listbox.insert(index, r['discordName'])
 
 def addnew():
-    cur.execute("INSERT INTO Player (discordName, discordID, lolID, lolRank, preferences, toxicity) VALUES ('<new player>', '-1', '', '', '', 0)")
+    cur.execute("INSERT INTO Player (discordName, discordID, riotID, lolRank, preferences, toxicity) VALUES ('<new player>', '-1', '', '', '', 0)")
     dbconn.commit()
     loadPlayers()
 
@@ -69,8 +69,8 @@ def onselect(evt):
     txtDiscordName.insert(END, result[idx]["discordName"])
     txtDiscordID.delete(1.0, END)
     txtDiscordID.insert(END, result[idx]["DiscordID"])
-    txtlolID.delete(1.0, END)
-    txtlolID.insert(END, result[idx]["lolID"])
+    txtriotID.delete(1.0, END)
+    txtriotID.insert(END, result[idx]["riotID"])
     txtlolRank.delete(1.0, END)
     txtlolRank.insert(END, result[idx]["lolRank"])
     txtpreferences.delete(1.0, END)
@@ -81,7 +81,7 @@ def onselect(evt):
 def cleartext():
     txtDiscordName.delete(1.0, END)
     txtDiscordID.delete(1.0, END)
-    txtlolID.delete(1.0, END)
+    txtriotID.delete(1.0, END)
     txtlolRank.delete(1.0, END)
     txtpreferences.delete(1.0, END)
     txtToxicity.delete(1.0, END)
@@ -93,27 +93,56 @@ def create_data():
         dbconn = sqlite3.connect("bot.db")
         cur = dbconn.cursor()
 
-        query = """INSERT INTO Player (discordID, discordName, lolID, lolRank, preferences, toxicity) VALUES
-            (123456789012345678, 'Player1', 'LOLPlayer1', 'Diamond', '01234', 2),
-            (123456789012345679, 'Player2', 'LOLPlayer2', 'Platinum', '10100', 1),
-            (123456789012345680, 'Player3', 'LOLPlayer3', 'Gold', '00321', 3),
-            (123456789012345681, 'Player4', 'LOLPlayer4', 'Silver', '22222', 4),
-            (123456789012345682, 'Player5', 'LOLPlayer5', 'Bronze', '00001', 5),
-            (123456789012345683, 'Player6', 'LOLPlayer6', 'Diamond', '43210', 2),
-            (123456789012345684, 'Player7', 'LOLPlayer7', 'Platinum', '32100', 3),
-            (123456789012345685, 'Player8', 'LOLPlayer8', 'Gold', '21000', 4),
-            (123456789012345686, 'Player9', 'LOLPlayer9', 'Silver', '10001', 5),
-            (123456789012345687, 'Player10', 'LOLPlayer10', 'Bronze', '00400', 1),
-            (123456789012345688, 'Player11', 'LOLPlayer11', 'Diamond', '43210', 2),
-            (123456789012345689, 'Player12', 'LOLPlayer12', 'Platinum', '32100', 3),
-            (123456789012345690, 'Player13', 'LOLPlayer13', 'Gold', '21030', 4),
-            (123456789012345691, 'Player14', 'LOLPlayer14', 'Silver', '11234', 5),
-            (123456789012345692, 'Player15', 'LOLPlayer15', 'Bronze', '11111', 1),
-            (123456789012345693, 'Player16', 'LOLPlayer16', 'Diamond', '43210', 2),
-            (123456789012345694, 'Player17', 'LOLPlayer17', 'Platinum', '32100', 3),
-            (123456789012345695, 'Player18', 'LOLPlayer18', 'Gold', '21000', 4),
-            (123456789012345696, 'Player19', 'LOLPlayer19', 'Silver', '10010', 5),
-            (123456789012345697, 'Player20', 'LOLPlayer20', 'Bronze', '03420', 1);"""
+        query = "DELETE FROM Player"
+        cur.execute(query)
+        dbconn.commit()
+
+        query = """INSERT INTO Player (discordID, discordName, riotID, lolRank, preferences, toxicity) VALUES
+            (500012,'crispten','Crisp Ten','Diamond','42414',0 ),
+            (500028,'supersix5','Omval','Silver','55215',0 ),
+            (500001,'ace_of_spades448','aceofspades44','Platinum','45414',0 ),
+            (500008,'sneckomode','CHR0NlC','Silver','55512',0 ),
+            (500015,'genjose','genjose','Platinum','25515',0 ),
+            (500002,'aerof','Aerof','Emerald','44444',0 ),
+            (500018,'imsoclean','ImSoClean','Master','44444',0 ),
+            (500026,'KigMoMo#5044','MoMo','Master','44444',0 ),
+            (500027,'Nombe?','NomBe','Emerald','44444',0 ),
+            (500030,'qartho','QarthO','Master','44444',0 ),
+            (500042,'vanquish4707','Vanquish','Master','44444',0 ),
+            (500044,'yolopotat0','yolopotat00','Platinum','44444',0 ),
+            (500014,'foodequalschef','Food','Silver','51525',0 ),
+            (500022,'lakexl','LakeXL','Emerald','51552',0 ),
+            (500032,'rainyydayy','Lily','Emerald','51552',0 ),
+            (500035,'returtle','ReTurtle','Emerald','51552',1 ),
+            (500023,'LordZed','LordZed','Silver','21555',0 ),
+            (500041,'tortuehuppee','tortue','Platinum','21555',0 ),
+            (500040,'cambo023','teahee','Gold','55125',0 ),
+            (500029,'han_sooyoung','Pika','Emerald','51255',0 ),
+            (500043,'xtri.','xTri','Platinum','44154',0 ),
+            (500004,'bemo#5322','bemo','Silver','53152',0 ),
+            (500013,'fizz13','Fizz','Emerald','25155',0 ),
+            (500016,'gogetyama','Gogetyama','Emerald','25155',0 ),
+            (500024,'LotusMustDie','Lotus','Gold','25155',0 ),
+            (500025,'mattietkd','MattieTKD','Diamond','25155',0 ),
+            (500031,'quentinmon','quentinmon','Bronze','25155',0 ),
+            (500020,'kelcior501','Kelcior','Silver','44454',0 ),
+            (500037,'snorlax0143','Snorlax','Emerald','44454',0 ),
+            (500007,'drchanchan','Chandler','Emerald','44445',1 ),
+            (500011,'corneal','Corneal','Emerald','45444',0 ),
+            (500017,'thegozerian','thegozarian','Platinum','45444',0 ),
+            (500039,'kitkat_riceball','Strwbry Mooncake','Emerald','54444',0 ),
+            (500034,'reedlau','Reed','Silver','44451',0 ),
+            (500033,'readthistwice','Readthistwice','Master','55551',0 ),
+            (500005,'bunkat','BunKat','Diamond','44441',99999 ),
+            (500006,'lilbusa','BUSA','Gold','55251',0 ),
+            (500019,'infiniteaim','InfiniteAim','Master','55251',0 ),
+            (500009,'chug1','Chug','Emerald','25551',1 ),
+            (500036,'ShadowMak03','ShadowMak','Silver','25551',0 ),
+            (500000,'apileoforanges','a wittle gwiefer','Diamond','15255',0 ),
+            (500010,'connero','conner101','Diamond','15255',0 ),
+            (500021,'kneesocks77','Kneesocks','Emerald','15255',0 ),
+            (500038,'neel1','Spoof','Silver','15253',0 ),
+            (500003,'thegodapollo','Apollo','Silver','15552',0 );"""
         cur.execute(query)
         dbconn.commit()
 
@@ -154,14 +183,14 @@ listbox = Listbox(tabPlayerData, height = 15, width = 20)
 # Define text boxes and labels to edit data
 lblDiscordName = Label(tabPlayerData, height=1, width=20, text="Discord ID")
 lblDiscordID = Label(tabPlayerData, height=1, width=20, text="Discord Name")
-lbllolID = Label(tabPlayerData, height=1, width=20, text="LOL ID")
+lblriotID = Label(tabPlayerData, height=1, width=20, text="LOL ID")
 lbllolRank = Label(tabPlayerData, height=1, width=20, text="LOL Rank")
 lblpreferences = Label(tabPlayerData, height=1, width=20, text="TJMAS Preferences")
 lblToxicity = Label(tabPlayerData, height=1, width=20, text="Toxicity")
 
 txtDiscordName = Text(tabPlayerData, height=1, width=20)
 txtDiscordID = Text(tabPlayerData, height=1, width=20)
-txtlolID = Text(tabPlayerData, height=1, width=20)
+txtriotID = Text(tabPlayerData, height=1, width=20)
 txtlolRank = Text(tabPlayerData, height=1, width=20)
 txtpreferences = Text(tabPlayerData, height=1, width=20)
 txtToxicity = Text(tabPlayerData, height=1, width=20)
@@ -177,7 +206,7 @@ listbox.grid(row=1, column=0, rowspan=6, padx=10, pady=10)
 
 lblDiscordName.grid(row=1, column=1)
 lblDiscordID.grid(row=2, column=1)
-lbllolID.grid(row=3, column=1)
+lblriotID.grid(row=3, column=1)
 lbllolRank.grid(row=4, column=1)
 lblpreferences.grid(row=5, column=1)
 lblToxicity.grid(row=6, column=1)
@@ -185,14 +214,14 @@ lblToxicity.grid(row=6, column=1)
 # txtDiscordID.config(state=DISABLED)
 txtDiscordID.grid(row=1, column=2) 
 txtDiscordName.grid(row=2, column=2)
-txtlolID.grid(row=3, column=2) 
+txtriotID.grid(row=3, column=2) 
 txtlolRank.grid(row=4, column=2) 
 txtpreferences.grid(row=5, column=2) 
 txtToxicity.grid(row=6, column=2) 
 
 txtDiscordName.bind("<Tab>", focus_next_widget)
 txtDiscordID.bind("<Tab>", focus_next_widget)
-txtlolID.bind("<Tab>", focus_next_widget)
+txtriotID.bind("<Tab>", focus_next_widget)
 txtlolRank.bind("<Tab>", focus_next_widget)
 txtpreferences.bind("<Tab>", focus_next_widget)
 
@@ -203,6 +232,7 @@ btnDelete.grid(row=7, column=1)
 #endregion PLAYER_TAB
 
 # Load the player data into the player tab list
+# create_data()
 loadPlayers()
 
 # Execute Tkinter
