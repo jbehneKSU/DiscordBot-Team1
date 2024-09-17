@@ -134,7 +134,7 @@ class DropdownView(discord.ui.View):
 
 #Checkin button class for checking in to tournaments.
 class CheckinButtons(discord.ui.View):
-    def __init__(self, *, timeout = 900):
+    def __init__(self, *, timeout):
         super().__init__(timeout = timeout)
 
     """
@@ -163,6 +163,7 @@ class CheckinButtons(discord.ui.View):
         await member.add_roles(player)
         await interaction.response.edit_message(view = self)
         await interaction.followup.send(f'You have checked in with Riot ID "{riotID}"!  Be sure to check your /roleselect and update your /riotID if needed.', ephemeral = True)
+        # await roleselect(interaction)
         return "Checked in"        
 
     """
@@ -483,60 +484,6 @@ def update_toxicity(interaction, discord_username):
     #     (f'An error occured: {e}')
     #     return e
 
-#Method to create teams
-def create_teams(self, player_users):
-    # matched_players = []
-
-    # Player definition order = self, tier, username, discord_id, top_priority, jungle_priority, mid_priority, bot_priority, support_priority
-    try:
-        dbconn = sqlite3.connect("bot.db")
-        cur = dbconn.cursor()
-        query = f"SELECT * FROM Player WHERE discordID IN ({','.join(['?' for _ in player_users])})"
-        cur.execute(query, player_users)
-        data = cur.fetchall()
-
-        # for pl in data:
-        #     matched_players.append(Player(self, pl[3], pl[2], pl[1], pl[4][0], pl[4][1], pl[4][2], pl[4][3], pl[4][4]))
-            
-    except sqlite3.Error as e:
-        print (f'Database error occurred creating teams: {e}')
-        return e
-
-    finally:
-        cur.close()
-        dbconn.close()    
-
-    # for i, row in enumerate(values):
-    #     for player in player_users:
-    #         if player.lower() == row[0].lower():
-    #             top_prio = 5
-    #             jg_prio = 5
-    #             mid_prio = 5
-    #             bot_prio = 5
-    #             supp_prio = 5
-    #             if row[3] == 'fill':
-    #                 top_prio = 1
-    #                 jg_prio = 1
-    #                 mid_prio = 1
-    #                 bot_prio = 1
-    #                 supp_prio = 1
-    #             roles = row[3].split('/')
-    #             index = 1
-    #             for i, role in enumerate(roles):
-    #                 if role.lower() == 'top':
-    #                     top_prio = index
-    #                 if role.lower() == 'jg' or role.lower() == 'jung' or role.lower() == 'jungle':
-    #                     jg_prio = index
-    #                 if role.lower() == 'mid':
-    #                     mid_prio = index
-    #                 if role.lower() == 'bot' or role.lower() == 'adc':
-    #                     bot_prio = index
-    #                 if role.lower() == 'supp' or role.lower() == 'support':
-    #                     supp_prio = index
-    #                 index += 1
-    #             matched_players.append(Player(tier=row[4],username=row[1],discord_id=row[0], top_priority=top_prio, jungle_priority=jg_prio, mid_priority=mid_prio, bot_priority=bot_prio, support_priority=supp_prio))    
-    return
-
 #Method to update Riot ID
 def update_riotid(interaction: discord.Interaction, id):
     try:
@@ -608,12 +555,29 @@ def check_balance(team_red, team_blue, players):
 
 def create_teams(players):
     team_red, team_blue = balanced_teams(players)
-    while not check_balance(team_red, team_blue, players):
+    balance_attempts = 10
+    while not check_balance(team_red, team_blue, players) and balance_attempts >= 0:
         random.shuffle(players)
         team_red, team_blue = balanced_teams(players)
+        balance_attempts -= 1
     
     return team_red, team_blue
 
+# Method to take users in the player role and pull their preferences and rank to build the teams
+def create_playerlist(player_users):
+    try:
+        dbconn = sqlite3.connect("bot.db")
+        cur = dbconn.cursor()
+        # cur.execute("")
+        
+
+    except sqlite3.Error as e:
+        print(f"Terminating due to database player creation error: {e}")
+        return
+
+    finally:
+        cur.close()
+        dbconn.close()    
 
 #endregion METHODS
 
@@ -636,8 +600,8 @@ async def riotid(interaction, id: str):
     description = 'Initiate Tournament Check-In.  Add timeout in seconds or use the default of 900 - 15 minutes.',
     guild = discord.Object(GUILD))
 async def checkin(interaction, timeout: int=900):
-    view = CheckinButtons(timeout)
-    await interaction.response.send_message('Check-In for the tournament has started! You have 15 minutes to check-in.', view = view)
+    view = CheckinButtons(timeout=timeout)
+    await interaction.response.send_message(f'Check-In for the tournament has started! You have {timeout//60} minutes to check-in.', view = view)
 
 #Command to set preferences to fill (44444 is used)
 @tree.command(
@@ -656,7 +620,7 @@ async def fill(interaction):
         guild = discord.Object(GUILD))
 async def roleselect(interaction):
     register_player(interaction)
-    embed = discord.Embed(title="Select your role preferences", 
+    embed = discord.Embed(title="Select your role preferences (1 (high) to 5 (never))", 
                           description=get_preferences(interaction), color=0x00ff00)
     view = DropdownView()
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
@@ -769,6 +733,16 @@ async def players(interaction: discord.Interaction):
     guild = discord.Object(GUILD))
 async def matchmake(interaction: discord.Interaction, match_number: int):
     try:
+        dbconn = sqlite3.connect("bot.db")
+        cur = dbconn.cursor()
+        query = "SELECT EXISTS (SELECT * FROM Games WHERE isComplete = 0)"
+        cur.execute(query)
+        result = cur.fetchone()
+
+        if result[0] != 0:
+            await interaction.response.send_message('There are one or more incomplete games that need to be closed, see /activegames', ephemeral = True)
+            return
+
         #Finds all players in discord, adds them to a list
         player_role = get(interaction.guild.roles, name='Player')
         player_users = [member.id for member in player_role.members]
@@ -781,18 +755,10 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
         # If > 10 players, sort players by rank
         # Set lobby count = player count / 10
         # Iterate lobby count, create both teams
+        create_playerlist(player_users)
 
         if len(player_users) % 10 != 0:
-            await interaction.followup.send('There is not a multiple of 10 players, please see /players', ephemeral = True)
-            return
-
-        dbconn = sqlite3.connect("bot.db")
-        cur = dbconn.cursor()
-        query = "SELECT EXISTS (SELECT * FROM Games WHERE isComplete = 0)"
-        result = cur.execute(query)
-
-        if result[0] != 0:
-            await interaction.followup.send('There are one or more incomplete games that need to be closed, see /activegames', ephemeral = True)
+            await interaction.response.send_message('There is not a multiple of 10 players, please see /players', ephemeral = True)
             return
 
         for idx in range(0, player_users.count()/10):
