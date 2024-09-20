@@ -9,15 +9,15 @@ Project is to create a Discord bot that can perform administrative procedures fo
 To setup the discord bot you will need a couple of things.
 Before you begin, you will need a file named .env (just like that nothing else) in the same folder as the bot.py file
 
-Within the .env file you will need to put the following things
+Within the .env file you will need to put the following things:
 
-BOT_TOKEN =
+- BOT_TOKEN =
 
-GUILD_TOKEN =
+- GUILD_TOKEN =
 
-GOOGLE_SHEETS_ID =
+- GOOGLE_SHEETS_ID =
 
-GOOGLE_SHEETS_NAME =
+- GOOGLE_SHEETS_NAME =
 
 The bot token will be the discord bot token that you create on the discord developer dashboard.
 
@@ -66,17 +66,17 @@ You may need to create these folders, but these are necessary to make the bot ru
 ## Installation of Packages ## 
 The Required Packages for this bot to be ran on a computer are the following:
 
-asyncio
+- asyncio
 
-discord
+- discord
 
-itertools
+- itertools
 
-gspread
+- gspread
 
-dotenv
+- dotenv
 
-google api
+- google api
 
 The google API package installation is found in the link on how to setup google api access.
 
