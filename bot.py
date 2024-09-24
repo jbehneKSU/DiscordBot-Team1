@@ -373,7 +373,7 @@ def check_database():
             );""")
         
         cur.execute("""CREATE TABLE IF NOT EXISTS Games (
-            gameID bigint PRIMARY KEY		    -- Unique ID to identify the game
+            gameID INTEGER PRIMARY KEY AUTOINCREMENT	    -- Unique ID to identify the game
             , gameDate date						-- Date of the game
             , gameNumber tinyint				-- Game number (1, 2, 3)	
             , gameLobby tinyint					-- Game Lobby (1, 2, 3) per 10 players
@@ -504,77 +504,154 @@ def update_riotid(interaction: discord.Interaction, id):
 
 
 
-#Method to assign roles to the player based on their preference
+# Method to assign roles to players based on their preferred priority
 def assign_roles(players):
-    position_map = ["Top", "Jungle", "Mid", "ADC", "Support"]
-    positions = {position: [] for position in position_map}
-    
+    roles = ['top', 'jungle', 'mid', 'bot', 'support']
+    priority_mapping = {1: [], 2: [], 3: [], 4: [], 5: []}
+
     for player in players:
-        preferences = list(player[2])
-        for i, pos in enumerate(position_map):
-            positions[pos].append((player, int(preferences[i])))
-
-    for pos in positions:
-        positions[pos] = sorted(positions[pos], key=itemgetter(1))
+        for idx, priority in enumerate([player.top_priority, player.jungle_priority, player.mid_priority, player.bot_priority, player.support_priority]):
+            priority_mapping[priority].append((player, roles[idx]))
     
-    return positions
-
-#Method to create balanced teams
-def balanced_teams(players):
-    positions = assign_roles(players)
-    team_red = {}
-    team_blue = {}
-
-    for position, candidates in positions.items():
-        for candidate in candidates:
-            player = candidate[0]
-            if player[0] in team_red.values():
-                continue
-            if player[0] in team_blue.values():
-                continue
-
-            if position in team_red:
-                team_blue[position] = player[0]
-            else:
-                team_red[position] = player[0]
-
-    return team_red, team_blue
-
-#Method to check the balance of both teams to ensure opposing positions are not at a disadvantage
-def check_balance(team_red, team_blue, players):
-    rank_order = ['Bronze', 'Silver', 'Gold', 'Platinum', 'Emerald', 'Diamond', 'Master', 'Grandmaster', 'Challenger']
-    position_map = ["Top", "Jungle", "Mid", "ADC", "Support"]
-
-    player_ranks = {player[0]: player[1] for player in players}
+    role_assignments = {}
+    assigned_players = set()
     
-    for position in position_map:
-        red_rank = player_ranks[team_red[position]]
-        blue_rank = player_ranks[team_blue[position]]
-        if abs(rank_order.index(red_rank) - rank_order.index(blue_rank)) > 1:
+    for priority in sorted(priority_mapping.keys()):
+        for player, role in priority_mapping[priority]:
+            if role not in role_assignments and player not in assigned_players:
+                role_assignments[role] = player
+                assigned_players.add(player)
+    
+    return role_assignments
+
+# Method to create teams by sorting players by tier and then assigning roles
+def create_teams(players):
+    players.sort(key=lambda x: x.tier)
+    team_size = len(players) // 2
+
+    red_team_players = players[:team_size]
+    blue_team_players = players[team_size:]
+
+    red_team_roles = assign_roles(red_team_players)
+    blue_team_roles = assign_roles(blue_team_players)
+
+    red_team = Team(
+        top_laner=red_team_roles['top'],
+        jungle=red_team_roles['jungle'],
+        mid_laner=red_team_roles['mid'],
+        bot_laner=red_team_roles['bot'],
+        support=red_team_roles['support']
+    )
+
+    blue_team = Team(
+        top_laner=blue_team_roles['top'],
+        jungle=blue_team_roles['jungle'],
+        mid_laner=blue_team_roles['mid'],
+        bot_laner=blue_team_roles['bot'],
+        support=blue_team_roles['support']
+    )
+
+    return red_team, blue_team
+
+# Method that validates players are within 1 tier of each other and returns true or false
+def validate_team_matchup(red_team, blue_team):
+    roles = ['top_laner', 'jungle', 'mid_laner', 'bot_laner', 'support']
+    for role in roles:
+        red_player = getattr(red_team, role)
+        blue_player = getattr(blue_team, role)
+        if abs(red_player.tier - blue_player.tier) > 1:
             return False
     return True
 
-#Method to create the teams, will execute the balanced_teams method until the check_balance method is true
-def create_teams(players):
-    team_red, team_blue = balanced_teams(players)
-    balance_attempts = 10
-    while not check_balance(team_red, team_blue, players) and balance_attempts >= 0:
-        random.shuffle(players)
-        team_red, team_blue = balanced_teams(players)
-        balance_attempts -= 1
+# Method to create and return a balanced team
+def find_balanced_teams(players):
+    possible_combinations = itertools.combinations(players, len(players) // 2)
+    for combination in possible_combinations:
+        red_team_players = list(combination)
+        blue_team_players = [player for player in players if player not in red_team_players]
+        
+        red_team_roles = assign_roles(red_team_players)
+        blue_team_roles = assign_roles(blue_team_players)
+
+        red_team = Team(
+            top_laner=red_team_roles['top'],
+            jungle=red_team_roles['jungle'],
+            mid_laner=red_team_roles['mid'],
+            bot_laner=red_team_roles['bot'],
+            support=red_team_roles['support']
+        )
+
+        blue_team = Team(
+            top_laner=blue_team_roles['top'],
+            jungle=blue_team_roles['jungle'],
+            mid_laner=blue_team_roles['mid'],
+            bot_laner=blue_team_roles['bot'],
+            support=blue_team_roles['support']
+        )
+
+        if validate_team_matchup(red_team, blue_team):
+            return red_team, blue_team
+
+    return None, None
+
+# This is the primary team formation method, it will attempt to create a balanced team 10 times before failing
+def balance_teams(players):
+    red_team, blue_team = find_balanced_teams(players)
     
-    return team_red, team_blue
+    attempts = 1
+    while red_team is None or blue_team is None:
+        red_team, blue_team = find_balanced_teams(players)
+        attempts += 1
+
+        if attempts == 10:
+            continue
+
+    if red_team is None or blue_team is None:
+        return "Teams are not balanced. Please adjust priorities or tiers."
+
+    return red_team, blue_team
 
 #Method to take users in the player role and pull their preferences to pass to the create_teams method
 def create_playerlist(player_users):
     try:
+        player_list = []
         dbconn = sqlite3.connect("bot.db")
         cur = dbconn.cursor()
-        # cur.execute("")
-        
 
+        placeholders = ', '.join('?' for _ in player_users)
+        query = f"""
+            SELECT 
+                CASE WHEN COALESCE(tieroverride,0) = 0 THEN 
+                    CASE lolRank
+                    WHEN 'Bronze' THEN 9
+                    WHEN 'Silver' THEN 8 
+                    WHEN 'Gold' THEN 7 
+                    WHEN 'Platinum' THEN 6 
+                    WHEN 'Emerald' THEN 5 
+                    WHEN 'Diamond' THEN 4 
+                    WHEN 'Master' THEN 3 
+                    WHEN 'Grandmaster' THEN 2 
+                    WHEN 'Challenger' THEN 1 
+                    END END Tier
+                , RiotID
+                , discordID
+                , SUBSTRING(preferences, 1, 1) AS top_priority
+                , SUBSTRING(preferences, 2, 1) AS jungle_priority
+                , SUBSTRING(preferences, 3, 1) AS mid_priority
+                , SUBSTRING(preferences, 4, 1) AS bot_priority
+                , SUBSTRING(preferences, 5, 1) AS support_priority
+            FROM Player WHERE discordID IN ({placeholders})
+            ORDER BY Tier"""
+
+        cur.execute(query, player_users)
+        data = cur.fetchall()
+        for row in data:
+            player_list.append(Player(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7]))
+
+        return player_list
+    
     except sqlite3.Error as e:
-        print(f"Terminating due to database player creation error: {e}")
+        print(f"Terminating due to database team creation error: {e}")
         return
 
     finally:
@@ -757,18 +834,16 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
         # If > 10 players, sort players by rank
         # Set lobby count = player count / 10
         # Iterate lobby count, create both teams
-        
-        """ #Commenting out the player count checks to test team creation
-        if len(player_users) % 10 != 0:
-            await interaction.response.send_message('There is not a multiple of 10 players, please see /players', ephemeral = True)
-            return
 
-        for idx in range(0, player_users.count()/10):
-            query = 'INSERT INTO Games (gameDate, gameNumber, gameLobby, isComplete) VALUES (GETDATE(), ?, ?, 0)'
-            args = (match_number, idx,)
-            cur.execute(query, args)
-            dbconn.commit()
-        """
+        # if len(player_users) % 10 != 0:
+        #     await interaction.response.send_message('There is not a multiple of 10 players, please see /players', ephemeral = True)
+        #     return
+
+        # for idx in range(0, player_users.count()/10):
+        #     query = 'INSERT INTO Games (gameDate, gameNumber, gameLobby, isComplete) VALUES (GETDATE(), ?, ?, 0)'
+        #     args = (match_number, idx,)
+        #     cur.execute(query, args)
+        #     dbconn.commit()
 
         create_playerlist(player_users)
 

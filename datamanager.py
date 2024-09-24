@@ -183,7 +183,7 @@ listbox = Listbox(tabPlayerData, height = 15, width = 20)
 # Define text boxes and labels to edit data
 lblDiscordName = Label(tabPlayerData, height=1, width=20, text="Discord ID")
 lblDiscordID = Label(tabPlayerData, height=1, width=20, text="Discord Name")
-lblriotID = Label(tabPlayerData, height=1, width=20, text="LOL ID")
+lblriotID = Label(tabPlayerData, height=1, width=20, text="RIOT ID")
 lbllolRank = Label(tabPlayerData, height=1, width=20, text="LOL Rank")
 lblpreferences = Label(tabPlayerData, height=1, width=20, text="TJMAS Preferences")
 lblToxicity = Label(tabPlayerData, height=1, width=20, text="Toxicity")
