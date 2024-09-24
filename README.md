@@ -1,25 +1,27 @@
-**Overview**
-KSU Capstone Project. Project is to create a Discord bot that can perform administrative procedures for running a tournament, as well as tracking player data using game's api.
 
-**How to setup the Discord Bot**
+# KSU Capstone Project Fall 2024
+
+
+Project is to create a Discord bot that can perform administrative procedures for running a tournament, as well as tracking player data using game's api.
+
+
+## How to setup the Discord Bot
 To setup the discord bot you will need a couple of things.
-
 Before you begin, you will need a file named .env (just like that nothing else) in the same folder as the bot.py file
 
-Within the .env file you will need to put the following things
+Within the .env file you will need to put the following things:
 
-BOT_TOKEN =
+- BOT_TOKEN =
 
-GUILD_TOKEN =
+- GUILD_TOKEN =
 
-GOOGLE_SHEETS_ID =
+- GOOGLE_SHEETS_ID =
 
-GOOGLE_SHEETS_NAME =
+- GOOGLE_SHEETS_NAME =
 
 The bot token will be the discord bot token that you create on the discord developer dashboard.
 
-
-**How to make the discord bot token**
+## How to make the discord bot token ## 
 You need to go to https://discord.com/developers/applications and create a new developer application.
 
 You will be asked to name it and agree to the ToS
@@ -32,23 +34,21 @@ This will display a token and you will copy paste that token into the .env file
 
 It should look like BOT_TOKEN = ‘insert bot token here’
 
-
-**How to get the guild token**
+## How to get the guild token ## 
 This one is a lot simpler, you need to go to your discord client, enable discord developer mode, right click the server you want to use the bot in, then click copy server id
 
 In case of the KSU League of Legends Discord Server, the ID is 752309075798392852
 
 So it should look like GUILD_TOKEN = 752309075798392852
 
-How to get Sheet ID and Sheet name
+## How to get Sheet ID and Sheet name ## 
 The sheet id is just the ID of the google sheet that you are trying to use. To find it, all you need to do is look at the url of your google sheet. You can find the id here in the URL:
 
 docs.google.com/spreadsheets/d/ID_IS_HERE/
 
 Sheet name should be self-explanatory, it is just the name of the google spreadsheet
 
-
-**How to setup Google API access**
+## How to setup Google API access ## 
 Google makes a good enough tutorial on how to set it up, please read up here.
 
 https://developers.google.com/sheets/api/quickstart/python
@@ -63,28 +63,26 @@ You will need to put this credentials in the following location as well
 
 You may need to create these folders, but these are necessary to make the bot run
 
-
-**Installation of Packages**
+## Installation of Packages ## 
 The Required Packages for this bot to be ran on a computer are the following:
 
-asyncio
+- asyncio
 
-discord
+- discord
 
-itertools
+- itertools
 
-gspread
+- gspread
 
-dotenv
+- dotenv
 
-google api
+- google api
 
 The google API package installation is found in the link on how to setup google api access.
 
 To install the other packages, run pip3 install and it should install the package. Do this for all the packages and you should be good to move on
 
-
-**Final setup for the bot**
+## Final setup for the bot ## 
 Run the bot.py via python3 python3 bot.py
 
 And run any command that tries to access the google sheets
@@ -94,3 +92,5 @@ these commands are points, toxicity, wins, matchmake
 This will pull up a google signin window in your browser. You must sign into the google account that has access to both the googlesheet and the api access
 
 Once that is done, the bot will function without issues
+
+
