@@ -1,15 +1,6 @@
 import asyncio
 import discord
 import os
-import itertools
-import logging
-import gspread
-# from oauth2client.service_account import ServiceAccountCredentials
-# from google.auth.transport.requests import Request
-# from google.oauth2.credentials import Credentials
-# from google_auth_oauthlib.flow import InstalledAppFlow
-# from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 from dotenv import load_dotenv, find_dotenv
 from discord import app_commands
 from discord.utils import get
@@ -19,6 +10,15 @@ from discord.ext import commands
 import sqlite3
 import random
 from operator import itemgetter
+# import itertools
+# import logging
+# import gspread
+# from oauth2client.service_account import ServiceAccountCredentials
+# from google.auth.transport.requests import Request
+# from google.oauth2.credentials import Credentials
+# from google_auth_oauthlib.flow import InstalledAppFlow
+# from googleapiclient.discovery import build
+# from googleapiclient.errors import HttpError
 
 load_dotenv(find_dotenv())
 intents = discord.Intents.default()
@@ -251,7 +251,6 @@ class volunteerButtons(discord.ui.View):
 #endregion CLASSES
 
 
-
 #region METHODS
 
 #Method to return string of preferences for the /preferences embed
@@ -370,6 +369,7 @@ def check_database():
             , lolRank varchar(32)				-- Player's LOL rank
             , preferences varchar(512)			-- Player's encoded lane preferences (1H-5L) in order of Top, Jungle, Mid, ADC, and Support
             , toxicity int                      -- Player's toxicity score
+            , tieroverride int                  -- Used by admins to override player's tier score, 0 uses calculated value
             );""")
         
         cur.execute("""CREATE TABLE IF NOT EXISTS Games (
@@ -503,6 +503,8 @@ def update_riotid(interaction: discord.Interaction, id):
         dbconn.close()     
 
 
+
+#Method to assign roles to the player based on their preference
 def assign_roles(players):
     position_map = ["Top", "Jungle", "Mid", "ADC", "Support"]
     positions = {position: [] for position in position_map}
@@ -517,7 +519,7 @@ def assign_roles(players):
     
     return positions
 
-
+#Method to create balanced teams
 def balanced_teams(players):
     positions = assign_roles(players)
     team_red = {}
@@ -538,7 +540,7 @@ def balanced_teams(players):
 
     return team_red, team_blue
 
-
+#Method to check the balance of both teams to ensure opposing positions are not at a disadvantage
 def check_balance(team_red, team_blue, players):
     rank_order = ['Bronze', 'Silver', 'Gold', 'Platinum', 'Emerald', 'Diamond', 'Master', 'Grandmaster', 'Challenger']
     position_map = ["Top", "Jungle", "Mid", "ADC", "Support"]
@@ -552,7 +554,7 @@ def check_balance(team_red, team_blue, players):
             return False
     return True
 
-
+#Method to create the teams, will execute the balanced_teams method until the check_balance method is true
 def create_teams(players):
     team_red, team_blue = balanced_teams(players)
     balance_attempts = 10
@@ -563,7 +565,7 @@ def create_teams(players):
     
     return team_red, team_blue
 
-# Method to take users in the player role and pull their preferences and rank to build the teams
+#Method to take users in the player role and pull their preferences to pass to the create_teams method
 def create_playerlist(player_users):
     try:
         dbconn = sqlite3.connect("bot.db")
@@ -755,17 +757,21 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
         # If > 10 players, sort players by rank
         # Set lobby count = player count / 10
         # Iterate lobby count, create both teams
-        create_playerlist(player_users)
-
+        
+        """ #Commenting out the player count checks to test team creation
         if len(player_users) % 10 != 0:
             await interaction.response.send_message('There is not a multiple of 10 players, please see /players', ephemeral = True)
             return
 
         for idx in range(0, player_users.count()/10):
-            query = "INSERT INTO Games (gameDate, gameNumber, gameLobby, isComplete) VALUES (GETDATE(), ?, ?, 0)"
+            query = 'INSERT INTO Games (gameDate, gameNumber, gameLobby, isComplete) VALUES (GETDATE(), ?, ?, 0)'
             args = (match_number, idx,)
             cur.execute(query, args)
             dbconn.commit()
+        """
+
+        create_playerlist(player_users)
+
 
     except Exception as e:
         print(f'An error occured: {e}')

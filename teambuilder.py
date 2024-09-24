@@ -13,58 +13,115 @@ cur.execute("""CREATE TABLE IF NOT EXISTS Player (
     , lolRank varchar(32)				-- Player's LOL rank
     , preferences char(5)				-- Player's encoded lane preferences (1H-5L) in order of Top, Jungle, Mid, ADC, and Support
     , toxicity int                      -- Player's toxicity score
+    , tieroverride int                  -- Used by admins to override player's tier score, 0 uses calculated value
     );""")
 
 query = "DELETE FROM Player"
 cur.execute(query)
 dbconn.commit()
 
-query = """INSERT INTO Player (discordID, discordName, riotID, lolRank, preferences, toxicity) VALUES
-(500012,'crispten','Crisp Ten','Diamond','42414',0 ),
-(500028,'supersix5','Omval','Silver','55215',0 ),
-(500001,'ace_of_spades448','aceofspades44','Platinum','45414',0 ),
-(500008,'sneckomode','CHR0NlC','Silver','55512',0 ),
-(500015,'genjose','genjose','Platinum','25515',0 ),
-(500002,'aerof','Aerof','Emerald','44444',0 ),
-(500018,'imsoclean','ImSoClean','Master','44444',0 ),
-(500026,'KigMoMo#5044','MoMo','Master','44444',0 ),
-(500027,'Nombe?','NomBe','Emerald','44444',0 ),
-(500030,'qartho','QarthO','Master','44444',0 ),
-(500042,'vanquish4707','Vanquish','Master','44444',0 ),
-(500044,'yolopotat0','yolopotat00','Platinum','44444',0 ),
-(500014,'foodequalschef','Food','Silver','51525',0 ),
-(500022,'lakexl','LakeXL','Emerald','51552',0 ),
-(500032,'rainyydayy','Lily','Emerald','51552',0 ),
-(500035,'returtle','ReTurtle','Emerald','51552',1 ),
-(500023,'LordZed','LordZed','Silver','21555',0 ),
-(500041,'tortuehuppee','tortue','Platinum','21555',0 ),
-(500040,'cambo023','teahee','Gold','55125',0 ),
-(500029,'han_sooyoung','Pika','Emerald','51255',0 ),
-(500043,'xtri.','xTri','Platinum','44154',0 ),
-(500004,'bemo#5322','bemo','Silver','53152',0 ),
-(500013,'fizz13','Fizz','Emerald','25155',0 ),
-(500016,'gogetyama','Gogetyama','Emerald','25155',0 ),
-(500024,'LotusMustDie','Lotus','Gold','25155',0 ),
-(500025,'mattietkd','MattieTKD','Diamond','25155',0 ),
-(500031,'quentinmon','quentinmon','Bronze','25155',0 ),
-(500020,'kelcior501','Kelcior','Silver','44454',0 ),
-(500037,'snorlax0143','Snorlax','Emerald','44454',0 ),
-(500007,'drchanchan','Chandler','Emerald','44445',1 ),
-(500011,'corneal','Corneal','Emerald','45444',0 ),
-(500017,'thegozerian','thegozarian','Platinum','45444',0 ),
-(500039,'kitkat_riceball','Strwbry Mooncake','Emerald','54444',0 ),
-(500034,'reedlau','Reed','Silver','44451',0 ),
-(500033,'readthistwice','Readthistwice','Master','55551',0 ),
-(500005,'bunkat','BunKat','Diamond','44441',99999 ),
-(500006,'lilbusa','BUSA','Gold','55251',0 ),
-(500019,'infiniteaim','InfiniteAim','Master','55251',0 ),
-(500009,'chug1','Chug','Emerald','25551',1 ),
-(500036,'ShadowMak03','ShadowMak','Silver','25551',0 ),
-(500000,'apileoforanges','a wittle gwiefer','Diamond','15255',0 ),
-(500010,'connero','conner101','Diamond','15255',0 ),
-(500021,'kneesocks77','Kneesocks','Emerald','15255',0 ),
-(500038,'neel1','Spoof','Silver','15253',0 ),
-(500003,'thegodapollo','Apollo','Silver','15552',0 )
+query = """INSERT INTO Player (discordID, discordName, riotID, lolRank, preferences, toxicity, tieroverride) VALUES
+(500012,'crispten','Crisp Ten','Diamond','42414',0 ,0),
+(500028,'supersix5','Omval','Silver','55215',0 ,0),
+(500001,'ace_of_spades448','aceofspades44','Platinum','45414',0 ,0),
+(500008,'sneckomode','CHR0NlC','Silver','55512',0 ,0),
+(500015,'genjose','genjose','Platinum','25515',0 ,0),
+(500002,'aerof','Aerof','Emerald','44444',0 ,0),
+(500018,'imsoclean','ImSoClean','Master','44444',0 ,0),
+(500026,'KigMoMo#5044','MoMo','Master','44444',0 ,0),
+(500027,'Nombe?','NomBe','Emerald','44444',0 ,0),
+(500030,'qartho','QarthO','Master','44444',0 ,0),
+(500042,'vanquish4707','Vanquish','Master','44444',0 ,0),
+(500044,'yolopotat0','yolopotat00','Platinum','44444',0 ,0),
+(500014,'foodequalschef','Food','Silver','51525',0 ,0),
+(500022,'lakexl','LakeXL','Emerald','51552',0 ,0),
+(500032,'rainyydayy','Lily','Emerald','51552',0 ,0),
+(500035,'returtle','ReTurtle','Emerald','51552',1 ,0),
+(500023,'LordZed','LordZed','Silver','21555',0 ,0),
+(500041,'tortuehuppee','tortue','Platinum','21555',0 ,0),
+(500040,'cambo023','teahee','Gold','55125',0 ,0),
+(500029,'han_sooyoung','Pika','Emerald','51255',0 ,0),
+(500043,'xtri.','xTri','Platinum','44154',0 ,0),
+(500004,'bemo#5322','bemo','Silver','53152',0 ,0),
+(500013,'fizz13','Fizz','Emerald','25155',0 ,0),
+(500016,'gogetyama','Gogetyama','Emerald','25155',0 ,0),
+(500024,'LotusMustDie','Lotus','Gold','25155',0 ,0),
+(500025,'mattietkd','MattieTKD','Diamond','25155',0 ,0),
+(500031,'quentinmon','quentinmon','Bronze','25155',0 ,0),
+(500020,'kelcior501','Kelcior','Silver','44454',0 ,0),
+(500037,'snorlax0143','Snorlax','Emerald','44454',0 ,0),
+(500007,'drchanchan','Chandler','Emerald','44445',1 ,0),
+(500011,'corneal','Corneal','Emerald','45444',0 ,0),
+(500017,'thegozerian','thegozarian','Platinum','45444',0 ,0),
+(500039,'kitkat_riceball','Strwbry Mooncake','Emerald','54444',0 ,0),
+(500034,'reedlau','Reed','Silver','44451',0 ,0),
+(500033,'readthistwice','Readthistwice','Master','55551',0 ,0),
+(500005,'bunkat','BunKat','Diamond','44441',99999 ,0),
+(500006,'lilbusa','BUSA','Gold','55251',0 ,0),
+(500019,'infiniteaim','InfiniteAim','Master','55251',0 ,0),
+(500009,'chug1','Chug','Emerald','25551',1 ,0),
+(500036,'ShadowMak03','ShadowMak','Silver','25551',0 ,0),
+(500000,'apileoforanges','a wittle gwiefer','Diamond','15255',0 ,0),
+(500010,'connero','conner101','Diamond','15255',0 ,0),
+(500021,'kneesocks77','Kneesocks','Emerald','15255',0 ,0),
+(500038,'neel1','Spoof','Silver','15253',0 ,0),
+(500003,'thegodapollo','Apollo','Silver','15552',0 ,0)
+"""
+cur.execute(query)
+dbconn.commit()
+
+query = """INSERT Games VALUES ('1/12/24', 1, 1, 'Blue', 1)
+,('1/12/24', 2, 1, 'Red', 1)
+,('1/12/24', 3, 1, 'Red', 1)
+"""
+cur.execute(query)
+dbconn.commit()
+
+query = """
+INSERT GameDetail (gameID, discordID, teamName, gamePosition) VALUES (1, 500010, 'Blue', 'TOP')
+,(1, 500032, 'Blue', 'JNG')
+,(1, 500016, 'Blue', 'MID')
+,(1, 500030, 'Blue', 'ADC')
+,(1, 500034, 'Blue', 'SUP')
+,(1, 500009, 'Red', 'TOP')
+,(1, 500037, 'Red', 'JNG')
+,(1, 500002, 'Red', 'MID')
+,(1, 500018, 'Red', 'ADC')
+,(1, 500039, 'Red', 'SUP')
+,(1, 500005, 'Participation', 'N/A')
+,(1, 500017, 'Participation', 'N/A')
+,(1, 500014, 'Participation', 'N/A')
+,(2, 500000, 'Blue', 'TOP')
+,(2, 500017, 'Blue', 'JNG')
+,(2, 500034, 'Blue', 'MID')
+,(2, 500010, 'Blue', 'ADC')
+,(2, 500009, 'Blue', 'SUP')
+,(2, 500025, 'Red', 'TOP')
+,(2, 500014, 'Red', 'JNG')
+,(2, 500004, 'Red', 'MID')
+,(2, 500016, 'Red', 'ADC')
+,(2, 500005, 'Red', 'SUP')
+,(2, 500030, 'Participation', 'N/A')
+,(2, 500018, 'Participation', 'N/A')
+,(2, 500002, 'Participation', 'N/A')
+,(2, 500037, 'Participation', 'N/A')
+,(2, 500039, 'Participation', 'N/A')
+,(2, 500032, 'Participation', 'N/A')
+,(3, 500016, 'Blue', 'TOP')	
+,(3, 500009, 'Red', 'TOP')
+,(3, 500032, 'Blue', 'JNG')	
+,(3, 500000, 'Red', 'JNG')
+,(3, 500010, 'Blue', 'MID')	
+,(3, 500025, 'Red', 'MID')
+,(3, 500033, 'Blue', 'ADC')	
+,(3, 500005, 'Red', 'ADC')
+,(3, 500034, 'Blue', 'SUP')	
+,(3, 500017, 'Red', 'SUP')
+,(3, 500018, 'Participation', 'N/A')
+,(3, 500002, 'Participation', 'N/A')
+,(3, 500037, 'Participation', 'N/A')
+,(3, 500039, 'Participation', 'N/A')
+,(3, 500014, 'Participation', 'N/A')
 """
 cur.execute(query)
 dbconn.commit()
