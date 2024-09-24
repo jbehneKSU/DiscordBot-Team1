@@ -10,7 +10,7 @@ from discord.ext import commands
 import sqlite3
 import random
 from operator import itemgetter
-# import itertools
+import itertools
 # import logging
 # import gspread
 # from oauth2client.service_account import ServiceAccountCredentials
@@ -670,6 +670,7 @@ def create_playerlist(player_users):
     description = 'Update your Riot ID <Game Name><#Tagline>',
     guild = discord.Object(GUILD))
 async def riotid(interaction, id: str):
+    register_player()
     update_riotid(interaction, id)
     await interaction.response.send_message(f'Your League of Legends ID has been updated to {id}.', ephemeral=True)
 
@@ -811,6 +812,10 @@ async def players(interaction: discord.Interaction):
     description = "Form teams for all players enrolled in the game.",
     guild = discord.Object(GUILD))
 async def matchmake(interaction: discord.Interaction, match_number: int):
+    
+    embedLobby2 = None
+    embedLobby3 = None
+
     try:
         dbconn = sqlite3.connect("bot.db")
         cur = dbconn.cursor()
@@ -830,23 +835,106 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
         volunteer_role = get(interaction.guild.roles, name='Volunteer')
         volunteer_users = [member.id for member in volunteer_role.members]
 
-        # Check for player count % 10 = 0
-        # If > 10 players, sort players by rank
-        # Set lobby count = player count / 10
-        # Iterate lobby count, create both teams
+#region TESTCODE
+############################################################################################################
+#   TESTING ONLY
+        player_users = [500012,500028,500001,500008,500015,500002,500018,500026,500027,500030,500042,500044,500014,
+            500022,500032,500035,500023,500041,500040,500029]
+        volunteer_users = [500031,500020,500037,500007,500011,500017,500039,]
+############################################################################################################
+#endregion TESTCODE
 
-        # if len(player_users) % 10 != 0:
-        #     await interaction.response.send_message('There is not a multiple of 10 players, please see /players', ephemeral = True)
-        #     return
+        if len(player_users) % 10 != 0:
+            await interaction.response.send_message('There is not a multiple of 10 players, please see /players', ephemeral = True)
+            return
 
-        # for idx in range(0, player_users.count()/10):
-        #     query = 'INSERT INTO Games (gameDate, gameNumber, gameLobby, isComplete) VALUES (GETDATE(), ?, ?, 0)'
-        #     args = (match_number, idx,)
-        #     cur.execute(query, args)
-        #     dbconn.commit()
+        for idx in range(0, int(len(player_users)/10)):
+            query = '''INSERT INTO Games (gameDate, gameNumber, gameLobby, isComplete) VALUES (DATE('now'), ?, ?, 0)'''
+            args = (match_number, idx,)
+            cur.execute(query, args)
+            dbconn.commit()
+            team1, team2 = balance_teams(create_playerlist(player_users))
 
-        create_playerlist(player_users)
+            if idx == 1:
+                embedLobby1 = discord.Embed(color = discord.Color.from_rgb(255, 198, 41), title = f'Lobby 1 - Match: {match_number}')
+                embedLobby1.add_field(name = 'Roles', value = '')
+                embedLobby1.add_field(name = 'Red Team', value = '')
+                embedLobby1.add_field(name = 'Blue Team', value = '')
+                embedLobby1.add_field(name = '', value = 'Top Laner')
+                embedLobby1.add_field(name = '', value = team1.top_laner.username)
+                embedLobby1.add_field(name = '', value = team2.top_laner.username)
+                embedLobby1.add_field(name = '', value = 'Jungle')
+                embedLobby1.add_field(name = '', value = team1.jungle.username)
+                embedLobby1.add_field(name = '', value = team2.jungle.username)
+                embedLobby1.add_field(name = '', value = 'Mid Laner')
+                embedLobby1.add_field(name = '', value = team1.mid_laner.username)
+                embedLobby1.add_field(name = '', value = team2.mid_laner.username)
+                embedLobby1.add_field(name = '', value = 'Bot Laner')
+                embedLobby1.add_field(name = '', value = team1.bot_laner.username)
+                embedLobby1.add_field(name = '', value = team2.bot_laner.username)
+                embedLobby1.add_field(name = '', value = 'Support')
+                embedLobby1.add_field(name = '', value = team1.support.username)
+                embedLobby1.add_field(name = '', value = team2.support.username)
+            if idx == 2:
+                embedLobby2 = discord.Embed(color = discord.Color.from_rgb(255, 198, 41), title = f'Lobby 2 - Match: {match_number}')
+                embedLobby2.add_field(name = 'Roles', value = '')
+                embedLobby2.add_field(name = 'Red Team', value = '')
+                embedLobby2.add_field(name = 'Blue Team', value = '')
+                embedLobby2.add_field(name = '', value = 'Top Laner')
+                embedLobby2.add_field(name = '', value = team1.top_laner.username)
+                embedLobby2.add_field(name = '', value = team2.top_laner.username)
+                embedLobby2.add_field(name = '', value = 'Jungle')
+                embedLobby2.add_field(name = '', value = team1.jungle.username)
+                embedLobby2.add_field(name = '', value = team2.jungle.username)
+                embedLobby2.add_field(name = '', value = 'Mid Laner')
+                embedLobby2.add_field(name = '', value = team1.mid_laner.username)
+                embedLobby2.add_field(name = '', value = team2.mid_laner.username)
+                embedLobby2.add_field(name = '', value = 'Bot Laner')
+                embedLobby2.add_field(name = '', value = team1.bot_laner.username)
+                embedLobby2.add_field(name = '', value = team2.bot_laner.username)
+                embedLobby2.add_field(name = '', value = 'Support')
+                embedLobby2.add_field(name = '', value = team1.support.username)
+                embedLobby2.add_field(name = '', value = team2.support.username)
+            if idx == 3:
+                embedLobby3 = discord.Embed(color = discord.Color.from_rgb(255, 198, 41), title = f'Lobby 2 - Match: {match_number}')
+                embedLobby3.add_field(name = 'Roles', value = '')
+                embedLobby3.add_field(name = 'Red Team', value = '')
+                embedLobby3.add_field(name = 'Blue Team', value = '')
+                embedLobby3.add_field(name = '', value = 'Top Laner')
+                embedLobby3.add_field(name = '', value = team1.top_laner.username)
+                embedLobby3.add_field(name = '', value = team2.top_laner.username)
+                embedLobby3.add_field(name = '', value = 'Jungle')
+                embedLobby3.add_field(name = '', value = team1.jungle.username)
+                embedLobby3.add_field(name = '', value = team2.jungle.username)
+                embedLobby3.add_field(name = '', value = 'Mid Laner')
+                embedLobby3.add_field(name = '', value = team1.mid_laner.username)
+                embedLobby3.add_field(name = '', value = team2.mid_laner.username)
+                embedLobby3.add_field(name = '', value = 'Bot Laner')
+                embedLobby3.add_field(name = '', value = team1.bot_laner.username)
+                embedLobby3.add_field(name = '', value = team2.bot_laner.username)
+                embedLobby3.add_field(name = '', value = 'Support')
+                embedLobby3.add_field(name = '', value = team1.support.username)
+                embedLobby3.add_field(name = '', value = team2.support.username)
 
+        #Embed to display all users who volunteered to sit out.
+        embedVol = discord.Embed(color = discord.Color.blurple(), title = 'Volunteers - Match: ' + match_number)
+        for vol in volunteer_users:
+            embedVol.add_field(name = '', value = vol)
+        if not volunteer_users:
+            embedVol.add_field(name = '', value = 'No volunteers.')
+
+        if embedLobby2 == None:
+            await interaction.followup.send( embeds = [embedVol, embedLobby1])
+        elif embedLobby2 == None and not volunteer_users:
+            await interaction.followup.send( embeds = embedLobby1)
+        elif embedLobby3 == None:
+            await interaction.followup.send( embeds = [embedVol, embedLobby1, embedLobby2])
+        elif embedLobby3 == None and not volunteer_users:
+            await interaction.followup.send( embeds = [embedLobby1, embedLobby2])
+        elif volunteer_users == None:
+            await interaction.followup.send( embeds = [embedLobby1, embedLobby2, embedLobby3])
+        else:
+            await interaction.followup.send( embeds = [embedVol, embedLobby1, embedLobby2, embedLobby3])
 
     except Exception as e:
         print(f'An error occured: {e}')
