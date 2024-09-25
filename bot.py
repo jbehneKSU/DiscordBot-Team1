@@ -610,7 +610,7 @@ def balance_teams(players):
 
         attempts += 1
 
-    return red_team, blue_team
+    return blue_team, red_team
 
 #Method to take users in the player role and pull their preferences to pass to the create_teams method
 def create_playerlist(player_users):
@@ -843,7 +843,8 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
 
         #Finds all volunteers in discord, adds them to a list
         volunteer_role = get(interaction.guild.roles, name='Volunteer')
-        volunteer_users = [member.id for member in volunteer_role.members]
+        volunteer_users = [member.name for member in volunteer_role.members]
+        volunteer_ids = [member.id for member in volunteer_role.members]
 
 #region TESTCODE
 ############################################################################################################
@@ -851,7 +852,7 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
         player_users = [500012,500028,500001,500008,500015,500002,500018,500026,500027,500030,500042,500044,500014,
             500022,500032,500035,500023,500041,500040,500029]
         
-        volunteer_users = [500031,500020,500037,500007,500011,500017,500039,]
+        volunteer_ids = [500031,500020,500037,500007,500011,500017,500039,]
 ############################################################################################################
 #endregion TESTCODE
 
@@ -868,82 +869,87 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
             cur.execute(query, args)
             dbconn.commit()
             gameID = cur.lastrowid
-            team1, team2 = balance_teams(player_list[idx-1])
+            blueteam, redteam = balance_teams(player_list[idx-1])
 
             if idx == 1:
                 embedLobby1 = discord.Embed(color = discord.Color.from_rgb(255, 198, 41), title = f'Lobby 1 - Match: {match_number}')
                 embedLobby1.add_field(name = 'Roles', value = '')
-                embedLobby1.add_field(name = 'Red Team', value = '')
                 embedLobby1.add_field(name = 'Blue Team', value = '')
+                embedLobby1.add_field(name = 'Red Team', value = '')
                 embedLobby1.add_field(name = '', value = 'Top Laner')
-                embedLobby1.add_field(name = '', value = team1.top_laner.username)
-                embedLobby1.add_field(name = '', value = team2.top_laner.username)
+                embedLobby1.add_field(name = '', value = blueteam.top_laner.username)
+                embedLobby1.add_field(name = '', value = redteam.top_laner.username)
                 embedLobby1.add_field(name = '', value = 'Jungle')
-                embedLobby1.add_field(name = '', value = team1.jungle.username)
-                embedLobby1.add_field(name = '', value = team2.jungle.username)
+                embedLobby1.add_field(name = '', value = blueteam.jungle.username)
+                embedLobby1.add_field(name = '', value = redteam.jungle.username)
                 embedLobby1.add_field(name = '', value = 'Mid Laner')
-                embedLobby1.add_field(name = '', value = team1.mid_laner.username)
-                embedLobby1.add_field(name = '', value = team2.mid_laner.username)
+                embedLobby1.add_field(name = '', value = blueteam.mid_laner.username)
+                embedLobby1.add_field(name = '', value = redteam.mid_laner.username)
                 embedLobby1.add_field(name = '', value = 'Bot Laner')
-                embedLobby1.add_field(name = '', value = team1.bot_laner.username)
-                embedLobby1.add_field(name = '', value = team2.bot_laner.username)
+                embedLobby1.add_field(name = '', value = blueteam.bot_laner.username)
+                embedLobby1.add_field(name = '', value = redteam.bot_laner.username)
                 embedLobby1.add_field(name = '', value = 'Support')
-                embedLobby1.add_field(name = '', value = team1.support.username)
-                embedLobby1.add_field(name = '', value = team2.support.username)
+                embedLobby1.add_field(name = '', value = blueteam.support.username)
+                embedLobby1.add_field(name = '', value = redteam.support.username)
+
+                for vol in volunteer_ids:
+                    query = '''INSERT INTO GameDetail (gameID, discordID, teamName, gamePosition, MVP) VALUES (?, ?, 'Participation', 'N/A', 0)'''
+                    cur.execute(query, [gameID, vol])                
+                    dbconn.commit()                
                                
             if idx == 2:
                 embedLobby2 = discord.Embed(color = discord.Color.from_rgb(255, 198, 41), title = f'Lobby 2 - Match: {match_number}')
                 embedLobby2.add_field(name = 'Roles', value = '')
-                embedLobby2.add_field(name = 'Red Team', value = '')
                 embedLobby2.add_field(name = 'Blue Team', value = '')
+                embedLobby2.add_field(name = 'Red Team', value = '')
                 embedLobby2.add_field(name = '', value = 'Top Laner')
-                embedLobby2.add_field(name = '', value = team1.top_laner.username)
-                embedLobby2.add_field(name = '', value = team2.top_laner.username)
+                embedLobby2.add_field(name = '', value = blueteam.top_laner.username)
+                embedLobby2.add_field(name = '', value = redteam.top_laner.username)
                 embedLobby2.add_field(name = '', value = 'Jungle')
-                embedLobby2.add_field(name = '', value = team1.jungle.username)
-                embedLobby2.add_field(name = '', value = team2.jungle.username)
+                embedLobby2.add_field(name = '', value = blueteam.jungle.username)
+                embedLobby2.add_field(name = '', value = redteam.jungle.username)
                 embedLobby2.add_field(name = '', value = 'Mid Laner')
-                embedLobby2.add_field(name = '', value = team1.mid_laner.username)
-                embedLobby2.add_field(name = '', value = team2.mid_laner.username)
+                embedLobby2.add_field(name = '', value = blueteam.mid_laner.username)
+                embedLobby2.add_field(name = '', value = redteam.mid_laner.username)
                 embedLobby2.add_field(name = '', value = 'Bot Laner')
-                embedLobby2.add_field(name = '', value = team1.bot_laner.username)
-                embedLobby2.add_field(name = '', value = team2.bot_laner.username)
+                embedLobby2.add_field(name = '', value = blueteam.bot_laner.username)
+                embedLobby2.add_field(name = '', value = redteam.bot_laner.username)
                 embedLobby2.add_field(name = '', value = 'Support')
-                embedLobby2.add_field(name = '', value = team1.support.username)
-                embedLobby2.add_field(name = '', value = team2.support.username)
+                embedLobby2.add_field(name = '', value = blueteam.support.username)
+                embedLobby2.add_field(name = '', value = redteam.support.username)
            
             if idx == 3:
                 embedLobby3 = discord.Embed(color = discord.Color.from_rgb(255, 198, 41), title = f'Lobby 2 - Match: {match_number}')
                 embedLobby3.add_field(name = 'Roles', value = '')
-                embedLobby3.add_field(name = 'Red Team', value = '')
                 embedLobby3.add_field(name = 'Blue Team', value = '')
+                embedLobby3.add_field(name = 'Red Team', value = '')
                 embedLobby3.add_field(name = '', value = 'Top Laner')
-                embedLobby3.add_field(name = '', value = team1.top_laner.username)
-                embedLobby3.add_field(name = '', value = team2.top_laner.username)
+                embedLobby3.add_field(name = '', value = blueteam.top_laner.username)
+                embedLobby3.add_field(name = '', value = redteam.top_laner.username)
                 embedLobby3.add_field(name = '', value = 'Jungle')
-                embedLobby3.add_field(name = '', value = team1.jungle.username)
-                embedLobby3.add_field(name = '', value = team2.jungle.username)
+                embedLobby3.add_field(name = '', value = blueteam.jungle.username)
+                embedLobby3.add_field(name = '', value = redteam.jungle.username)
                 embedLobby3.add_field(name = '', value = 'Mid Laner')
-                embedLobby3.add_field(name = '', value = team1.mid_laner.username)
-                embedLobby3.add_field(name = '', value = team2.mid_laner.username)
+                embedLobby3.add_field(name = '', value = blueteam.mid_laner.username)
+                embedLobby3.add_field(name = '', value = redteam.mid_laner.username)
                 embedLobby3.add_field(name = '', value = 'Bot Laner')
-                embedLobby3.add_field(name = '', value = team1.bot_laner.username)
-                embedLobby3.add_field(name = '', value = team2.bot_laner.username)
+                embedLobby3.add_field(name = '', value = blueteam.bot_laner.username)
+                embedLobby3.add_field(name = '', value = redteam.bot_laner.username)
                 embedLobby3.add_field(name = '', value = 'Support')
-                embedLobby3.add_field(name = '', value = team1.support.username)
-                embedLobby3.add_field(name = '', value = team2.support.username)
+                embedLobby3.add_field(name = '', value = blueteam.support.username)
+                embedLobby3.add_field(name = '', value = redteam.support.username)
 
             query = '''INSERT INTO GameDetail (gameID, discordID, teamName, gamePosition, MVP) VALUES (?, ?, ?, ?, 0)'''
-            cur.execute(query, [gameID, team1.top_laner.discord_id, "Red", "TOP"])
-            cur.execute(query, [gameID, team1.jungle.discord_id, "Red", "JUN"])
-            cur.execute(query, [gameID, team1.mid_laner.discord_id, "Red", "MID"])
-            cur.execute(query, [gameID, team1.bot_laner.discord_id, "Red", "ADC"])
-            cur.execute(query, [gameID, team1.support.discord_id, "Red", "SUP"])
-            cur.execute(query, [gameID, team2.top_laner.discord_id, "Blue", "TOP"])
-            cur.execute(query, [gameID, team2.jungle.discord_id, "Blue", "JUN"])
-            cur.execute(query, [gameID, team2.mid_laner.discord_id, "Blue", "MID"])
-            cur.execute(query, [gameID, team2.bot_laner.discord_id, "Blue", "ADC"])
-            cur.execute(query, [gameID, team2.support.discord_id, "Blue", "SUP"])                
+            cur.execute(query, [gameID, redteam.top_laner.discord_id, "Red", "TOP"])
+            cur.execute(query, [gameID, redteam.jungle.discord_id, "Red", "JUN"])
+            cur.execute(query, [gameID, redteam.mid_laner.discord_id, "Red", "MID"])
+            cur.execute(query, [gameID, redteam.bot_laner.discord_id, "Red", "ADC"])
+            cur.execute(query, [gameID, redteam.support.discord_id, "Red", "SUP"])
+            cur.execute(query, [gameID, blueteam.top_laner.discord_id, "Blue", "TOP"])
+            cur.execute(query, [gameID, blueteam.jungle.discord_id, "Blue", "JUN"])
+            cur.execute(query, [gameID, blueteam.mid_laner.discord_id, "Blue", "MID"])
+            cur.execute(query, [gameID, blueteam.bot_laner.discord_id, "Blue", "ADC"])
+            cur.execute(query, [gameID, blueteam.support.discord_id, "Blue", "SUP"])                
             dbconn.commit()
 
         #Embed to display all users who volunteered to sit out.
