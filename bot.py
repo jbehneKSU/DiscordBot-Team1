@@ -11,6 +11,7 @@ import sqlite3
 import random
 from operator import itemgetter
 import itertools
+import numpy as np
 # import logging
 # import gspread
 # from oauth2client.service_account import ServiceAccountCredentials
@@ -511,7 +512,7 @@ def assign_roles(players):
 
     for player in players:
         for idx, priority in enumerate([player.top_priority, player.jungle_priority, player.mid_priority, player.bot_priority, player.support_priority]):
-            priority_mapping[priority].append((player, roles[idx]))
+            priority_mapping[int(priority)].append((player, roles[idx]))
     
     role_assignments = {}
     assigned_players = set()
@@ -554,17 +555,17 @@ def create_teams(players):
     return red_team, blue_team
 
 # Method that validates players are within 1 tier of each other and returns true or false
-def validate_team_matchup(red_team, blue_team):
+def validate_team_matchup(red_team, blue_team, degree):
     roles = ['top_laner', 'jungle', 'mid_laner', 'bot_laner', 'support']
     for role in roles:
         red_player = getattr(red_team, role)
         blue_player = getattr(blue_team, role)
-        if abs(red_player.tier - blue_player.tier) > 1:
+        if abs(red_player.tier - blue_player.tier) > degree:
             return False
     return True
 
 # Method to create and return a balanced team
-def find_balanced_teams(players):
+def find_balanced_teams(players, degree):
     possible_combinations = itertools.combinations(players, len(players) // 2)
     for combination in possible_combinations:
         red_team_players = list(combination)
@@ -589,25 +590,25 @@ def find_balanced_teams(players):
             support=blue_team_roles['support']
         )
 
-        if validate_team_matchup(red_team, blue_team):
+        if validate_team_matchup(red_team, blue_team, degree):
             return red_team, blue_team
 
     return None, None
 
-# This is the primary team formation method, it will attempt to create a balanced team 10 times before failing
+# This is the primary team formation method
 def balance_teams(players):
-    red_team, blue_team = find_balanced_teams(players)
+    red_team, blue_team = find_balanced_teams(players, 1)
     
     attempts = 1
     while red_team is None or blue_team is None:
-        red_team, blue_team = find_balanced_teams(players)
+        if attempts <= 10:
+            red_team, blue_team = find_balanced_teams(players, 1)
+        elif 20 <= attempts > 10:
+            red_team, blue_team = find_balanced_teams(players, 2)
+        elif attempts > 20:
+            return "Teams are not balanced. Please adjust priorities or tiers."    
+
         attempts += 1
-
-        if attempts == 10:
-            continue
-
-    if red_team is None or blue_team is None:
-        return "Teams are not balanced. Please adjust priorities or tiers."
 
     return red_team, blue_team
 
@@ -632,7 +633,9 @@ def create_playerlist(player_users):
                     WHEN 'Master' THEN 3 
                     WHEN 'Grandmaster' THEN 2 
                     WHEN 'Challenger' THEN 1 
-                    END END Tier
+                    END 
+                ELSE tieroverride
+                END Tier
                 , RiotID
                 , discordID
                 , SUBSTRING(preferences, 1, 1) AS top_priority
@@ -812,7 +815,6 @@ async def players(interaction: discord.Interaction):
     description = "Form teams for all players enrolled in the game.",
     guild = discord.Object(GUILD))
 async def matchmake(interaction: discord.Interaction, match_number: int):
-    
     embedLobby2 = None
     embedLobby3 = None
 
@@ -825,6 +827,14 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
 
         if result[0] != 0:
             await interaction.response.send_message('There are one or more incomplete games that need to be closed, see /activegames', ephemeral = True)
+            return
+
+        query = "SELECT EXISTS (SELECT * FROM Games WHERE gameNumber = ? and gameDate = DATE('now'))"
+        cur.execute(query, [match_number,])
+        result = cur.fetchone()
+
+        if result[0] != 0:
+            await interaction.response.send_message(f'Match number {match_number} has already been used today', ephemeral = True)
             return
 
         #Finds all players in discord, adds them to a list
@@ -840,6 +850,7 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
 #   TESTING ONLY
         player_users = [500012,500028,500001,500008,500015,500002,500018,500026,500027,500030,500042,500044,500014,
             500022,500032,500035,500023,500041,500040,500029]
+        
         volunteer_users = [500031,500020,500037,500007,500011,500017,500039,]
 ############################################################################################################
 #endregion TESTCODE
@@ -848,12 +859,16 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
             await interaction.response.send_message('There is not a multiple of 10 players, please see /players', ephemeral = True)
             return
 
-        for idx in range(0, int(len(player_users)/10)):
+        player_list = np.array_split(create_playerlist(player_users), int(len(player_users)/10))
+        # player_list = np.array_split(random.shuffle(create_playerlist(player_users)), int(len(player_users)/10))
+
+        for idx in range(1, int(len(player_users)/10)+1):
             query = '''INSERT INTO Games (gameDate, gameNumber, gameLobby, isComplete) VALUES (DATE('now'), ?, ?, 0)'''
             args = (match_number, idx,)
             cur.execute(query, args)
             dbconn.commit()
-            team1, team2 = balance_teams(create_playerlist(player_users))
+            gameID = cur.lastrowid
+            team1, team2 = balance_teams(player_list[idx-1])
 
             if idx == 1:
                 embedLobby1 = discord.Embed(color = discord.Color.from_rgb(255, 198, 41), title = f'Lobby 1 - Match: {match_number}')
@@ -875,6 +890,7 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
                 embedLobby1.add_field(name = '', value = 'Support')
                 embedLobby1.add_field(name = '', value = team1.support.username)
                 embedLobby1.add_field(name = '', value = team2.support.username)
+                               
             if idx == 2:
                 embedLobby2 = discord.Embed(color = discord.Color.from_rgb(255, 198, 41), title = f'Lobby 2 - Match: {match_number}')
                 embedLobby2.add_field(name = 'Roles', value = '')
@@ -895,6 +911,7 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
                 embedLobby2.add_field(name = '', value = 'Support')
                 embedLobby2.add_field(name = '', value = team1.support.username)
                 embedLobby2.add_field(name = '', value = team2.support.username)
+           
             if idx == 3:
                 embedLobby3 = discord.Embed(color = discord.Color.from_rgb(255, 198, 41), title = f'Lobby 2 - Match: {match_number}')
                 embedLobby3.add_field(name = 'Roles', value = '')
@@ -916,25 +933,38 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
                 embedLobby3.add_field(name = '', value = team1.support.username)
                 embedLobby3.add_field(name = '', value = team2.support.username)
 
+            query = '''INSERT INTO GameDetail (gameID, discordID, teamName, gamePosition, MVP) VALUES (?, ?, ?, ?, 0)'''
+            cur.execute(query, [gameID, team1.top_laner.discord_id, "Red", "TOP"])
+            cur.execute(query, [gameID, team1.jungle.discord_id, "Red", "JUN"])
+            cur.execute(query, [gameID, team1.mid_laner.discord_id, "Red", "MID"])
+            cur.execute(query, [gameID, team1.bot_laner.discord_id, "Red", "ADC"])
+            cur.execute(query, [gameID, team1.support.discord_id, "Red", "SUP"])
+            cur.execute(query, [gameID, team2.top_laner.discord_id, "Blue", "TOP"])
+            cur.execute(query, [gameID, team2.jungle.discord_id, "Blue", "JUN"])
+            cur.execute(query, [gameID, team2.mid_laner.discord_id, "Blue", "MID"])
+            cur.execute(query, [gameID, team2.bot_laner.discord_id, "Blue", "ADC"])
+            cur.execute(query, [gameID, team2.support.discord_id, "Blue", "SUP"])                
+            dbconn.commit()
+
         #Embed to display all users who volunteered to sit out.
-        embedVol = discord.Embed(color = discord.Color.blurple(), title = 'Volunteers - Match: ' + match_number)
+        embedVol = discord.Embed(color = discord.Color.blurple(), title = 'Volunteers - Match: ' + str(match_number))
         for vol in volunteer_users:
             embedVol.add_field(name = '', value = vol)
         if not volunteer_users:
             embedVol.add_field(name = '', value = 'No volunteers.')
 
         if embedLobby2 == None:
-            await interaction.followup.send( embeds = [embedVol, embedLobby1])
+            await interaction.response.send_message( embeds = [embedVol, embedLobby1])
         elif embedLobby2 == None and not volunteer_users:
-            await interaction.followup.send( embeds = embedLobby1)
+            await interaction.response.send_message( embeds = embedLobby1)
         elif embedLobby3 == None:
-            await interaction.followup.send( embeds = [embedVol, embedLobby1, embedLobby2])
+            await interaction.response.send_message( embeds = [embedVol, embedLobby1, embedLobby2])
         elif embedLobby3 == None and not volunteer_users:
-            await interaction.followup.send( embeds = [embedLobby1, embedLobby2])
+            await interaction.response.send_message( embeds = [embedLobby1, embedLobby2])
         elif volunteer_users == None:
-            await interaction.followup.send( embeds = [embedLobby1, embedLobby2, embedLobby3])
+            await interaction.response.send_message( embeds = [embedLobby1, embedLobby2, embedLobby3])
         else:
-            await interaction.followup.send( embeds = [embedVol, embedLobby1, embedLobby2, embedLobby3])
+            await interaction.response.send_message( embeds = [embedVol, embedLobby1, embedLobby2, embedLobby3])
 
     except Exception as e:
         print(f'An error occured: {e}')
