@@ -750,13 +750,11 @@ async def volunteer(interaction):
         guild = discord.Object(GUILD))
 async def toxicity(interaction: discord.Interaction, discord_username: str):
     try:
-        await interaction.response.defer(ephemeral = True)
-        await asyncio.sleep(1)
-        found_user = update_toxicity(interaction = interaction, discord_username = discord_username)
+        found_user = update_toxicity(interaction, discord_username)
         if found_user:
-            await interaction.followup.send(f"{discord_username}'s toxicity point has been updated.")
+            await interaction.response.send_message(f"{discord_username}'s toxicity point has been updated.")
         else:
-            await interaction.followup.send(f"{discord_username} could not be found.")
+            await interaction.response.send_message(f"{discord_username} could not be found.")
     except Exception as e:
         print(f'An error occured: {e}')
 
@@ -787,6 +785,7 @@ async def remove(interaction: discord.Interaction):
         guild = discord.Object(GUILD))
 async def players(interaction: discord.Interaction):
     try:
+        #Finds all players in discord, adds them to a list
         player_users = []
         player = get(interaction.guild.roles, name = 'Player')
         for user in interaction.guild.members:
@@ -843,24 +842,31 @@ async def players(interaction: discord.Interaction):
     description = "Form teams for all players enrolled in the game.",
     guild = discord.Object(GUILD))
 async def matchmake(interaction: discord.Interaction, match_number: int):
+    # Create empty lobby vars for 2 and 3, 1 will always be created
     embedLobby2 = None
     embedLobby3 = None
 
     try:
+        # Create the database connection
         dbconn = sqlite3.connect("bot.db")
         cur = dbconn.cursor()
+
+        # Query to make sure games have been left actives, this ensures the win command is used after games are played
         query = "SELECT EXISTS (SELECT * FROM Games WHERE isComplete = 0)"
         cur.execute(query)
         result = cur.fetchone()
 
+        # If EXISTS does not return a 0 there are games that have not been closed and the method ends
         if result[0] != 0:
             await interaction.response.send_message('There are one or more incomplete games that need to be closed, see /activegames', ephemeral = True)
             return
 
+        # Query to check if the match number has been used already today
         query = "SELECT EXISTS (SELECT * FROM Games WHERE gameNumber = ? and gameDate = DATE('now'))"
         cur.execute(query, [match_number,])
         result = cur.fetchone()
 
+        # If EXISTS does not return a 0 then the given match number has already been used today and the method ends
         if result[0] != 0:
             await interaction.response.send_message(f'Match number {match_number} has already been used today', ephemeral = True)
             return
@@ -869,7 +875,7 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
         player_role = get(interaction.guild.roles, name='Player')
         player_users = [member.id for member in player_role.members]
 
-        #Finds all volunteers in discord, adds them to a list
+        #Finds all volunteers in discord, adds them to a list.  _users is used for the embed out and _ids is used for the database
         volunteer_role = get(interaction.guild.roles, name='Volunteer')
         volunteer_users = [member.name for member in volunteer_role.members]
         volunteer_ids = [member.id for member in volunteer_role.members]
@@ -884,22 +890,37 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
     ############################################################################################################
     #endregion TESTCODE
 
+        # Ensure an even split of 10 players and end the method if not
         if len(player_users) % 10 != 0:
             await interaction.response.send_message('There is not a multiple of 10 players, please see /players', ephemeral = True)
             return
 
+        # This passes the list of discord user IDs to the create_playerlist function to get the player data from the database as a list of Player class
         initial_list = create_playerlist(player_users)
+
+        # This shuffle will help randomize teams as opposes to sorting them by tier which tended to create the same teams
         random.shuffle(initial_list)
+
+        # Now create a list of lists of 10 players, this is how lobbies are create (10 = 1 lobby, 20 = 2 lobbies, 30 = 3 lobbies)
         player_list = np.array_split(initial_list, int(len(initial_list)/10))
 
+        # Loop through the list of list of Players to create 2 teams (blue/red) of 5 for each list.  
+        # Len() uses +1 so that idx corresponds with the Lobby # (1,2,3)
         for idx in range(1, int(len(player_users)/10)+1):
+            # Query to insert a new game using today's date, passing the game number from the input, the index of the loop for the lobby, and complete is 0
             query = '''INSERT INTO Games (gameDate, gameNumber, gameLobby, isComplete) VALUES (DATE('now'), ?, ?, 0)'''
             args = (match_number, idx,)
             cur.execute(query, args)
             dbconn.commit()
+
+            # This will capture the ID of the game that was just inserted to be used for the GameDetail table
             gameID = cur.lastrowid
+
+            # Call the primary team creation function by passing the current list of 10 Players, this returns the two teams 
+            # Because idx corresponds to Lobby# and the array is 0 based, subtract 1 from the lobby
             blueteam, redteam = balance_teams(player_list[idx-1])
 
+            # This IF will execute if the lobby # is 1 and build the Lobby 1 embed and insert the volunteers into the Lobby 1 game
             if idx == 1:
                 embedLobby1 = discord.Embed(color = discord.Color.from_rgb(255, 198, 41), title = f'Lobby 1 - Match: {match_number}')
                 embedLobby1.add_field(name = 'Roles', value = '')
@@ -921,11 +942,14 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
                 embedLobby1.add_field(name = '', value = blueteam.support.username)
                 embedLobby1.add_field(name = '', value = redteam.support.username)
 
+                # Loop the volunteer id list
                 for vol in volunteer_ids:
+                    # Query to insert the game ID and Discord ID to GameDetail for this game
                     query = '''INSERT INTO GameDetail (gameID, discordID, teamName, gamePosition, MVP) VALUES (?, ?, 'Participation', 'N/A', 0)'''
                     cur.execute(query, [gameID, vol])                
                     dbconn.commit()                
-                               
+
+            # This IF will execute if the lobby # is 2 and build the Lobby 2 embed 
             if idx == 2:
                 embedLobby2 = discord.Embed(color = discord.Color.from_rgb(255, 198, 41), title = f'Lobby 2 - Match: {match_number}')
                 embedLobby2.add_field(name = 'Roles', value = '')
@@ -947,6 +971,7 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
                 embedLobby2.add_field(name = '', value = blueteam.support.username)
                 embedLobby2.add_field(name = '', value = redteam.support.username)
            
+            # This IF will execute if the lobby # is 3 and build the Lobby 3 embed 
             if idx == 3:
                 embedLobby3 = discord.Embed(color = discord.Color.from_rgb(255, 198, 41), title = f'Lobby 2 - Match: {match_number}')
                 embedLobby3.add_field(name = 'Roles', value = '')
@@ -968,6 +993,7 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
                 embedLobby3.add_field(name = '', value = blueteam.support.username)
                 embedLobby3.add_field(name = '', value = redteam.support.username)
 
+            # After the lobby embed is created, this query will insert the players into the GameDetail table
             query = '''INSERT INTO GameDetail (gameID, discordID, teamName, gamePosition, MVP) VALUES (?, ?, ?, ?, 0)'''
             cur.execute(query, [gameID, redteam.top_laner.discord_id, "Red", "TOP"])
             cur.execute(query, [gameID, redteam.jungle.discord_id, "Red", "JUN"])
@@ -988,6 +1014,8 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
         if not volunteer_users:
             embedVol.add_field(name = '', value = 'No volunteers.')
 
+        # This block determines which Lobbies exist and displays the correct embeds.
+        # This could likely be done better, but currently works and is not causing performance issues
         if embedLobby2 == None:
             await interaction.response.send_message( embeds = [embedVol, embedLobby1])
         elif embedLobby2 == None and not volunteer_users:
@@ -1022,28 +1050,37 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
     )
 async def win(interaction: discord.Interaction, lobby: int, winner: str):
     try:
+        # Create database connection
         dbconn = sqlite3.connect("bot.db")
         cur = dbconn.cursor()
 
+        # Create query to check if the passed Lobby # is a valid open game
         query = 'SELECT EXISTS(SELECT gameID FROM Games WHERE isComplete = 0 AND gameLobby = ?)'
         cur.execute(query, [lobby])
         data = cur.fetchone()
+
+        # If the EXISTS returns a 0 then there is no active game for the lobby provided and the method ends
         if data[0] != 1:
             await interaction.response.send_message(f"Lobby #{lobby} is not an active game, see /activegames", ephemeral=True)
             return
         
+    # Catch SQL errors and print a message to the console and Discord
     except sqlite3.Error as e:
         print(f"Terminating due to database active games error: {e}")
+        await interaction.response.send_message(f"Failed due to database error {e}", ephemeral=True)
         return
     
     finally:
         cur.close()
         dbconn.close() 
     
+    # Data validation on the winning team name to make sure the user sent blue or red
     if (winner.lower() != "red" and winner.lower() != "blue"):
         await interaction.response.send_message(f"{winner} is not a team name, choose blue or red", ephemeral=True)
         return
     
+    # By this point, all data validation is clear and the update_win method is called to update the database
+    # The method returns true/false, if true it outputs the message the update was made, if false is returned the method outputs the error
     if(update_win(lobby, winner)):
         await interaction.response.send_message(f"The winner for Lobby {lobby} has been set for the {winner} team!")
 
@@ -1054,24 +1091,32 @@ async def win(interaction: discord.Interaction, lobby: int, winner: str):
     guild = discord.Object(GUILD))
 async def activegames(interaction: discord.Interaction):
     try:
+        # Create database connection
         dbconn = sqlite3.connect("bot.db")
         cur = dbconn.cursor()
 
+        # SQL query for active games, no args needed
         query = f"SELECT * FROM Games WHERE isComplete = 0"
         cur.execute(query)
         data = cur.fetchall()
     
+        # Create the embed for displaying the game information, will show 0 if no games are returned
         embedGames = discord.Embed(color = discord.Color.green(), title = 'Active Games')
         embedGames.set_footer(text = f'Total games: {len(data)}')
+
+        # Loop the data returned and add a line for each active game to the embed
         for row in data:
             embedGames.add_field(name = '', value = f"Date:{row[1]}")
             embedGames.add_field(name = '', value = f"Match #{row[2]}")
             embedGames.add_field(name = '', value = f"Lobby #{row[3]}")
 
+        # Output the embed
         await interaction.response.send_message(embed = embedGames)
         
+    # Catch sql errors, print to console and output message to Discord
     except sqlite3.Error as e:
         print(f"Terminating due to database active games error: {e}")
+        await interaction.response.send_message(f"Failed due to database error {e}", ephemeral=True)
 
     finally:
         cur.close()
