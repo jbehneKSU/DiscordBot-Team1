@@ -1,3 +1,9 @@
+'''
+pip install discord-py-interactions
+pip install discord-py-slash-command
+
+'''
+
 import asyncio
 import discord
 import os
@@ -12,6 +18,8 @@ import random
 from operator import itemgetter
 import itertools
 import numpy as np
+# from discord_slash import SlashCommand, SlashContext
+# from discord_slash.utils.manage_commands import create_choice, create_option
 # import logging
 # import gspread
 # from oauth2client.service_account import ServiceAccountCredentials
@@ -661,6 +669,25 @@ def create_playerlist(player_users):
         cur.close()
         dbconn.close()    
 
+#Method to update a game with the winner
+def update_win(lobby, winner):
+    try:
+        dbconn = sqlite3.connect("bot.db")
+        cur = dbconn.cursor()
+
+        query = f"UPDATE Games SET isComplete = 1, gameWinner = ? WHERE isComplete = 0 AND gameLobby = ?"
+        cur.execute(query, [winner.upper(), lobby])
+        dbconn.commit()
+    
+        return True
+    except sqlite3.Error as e:
+        print(f"Terminating due to database team win error: {e}")
+        return False
+
+    finally:
+        cur.close()
+        dbconn.close() 
+
 #endregion METHODS
 
 
@@ -810,6 +837,7 @@ async def players(interaction: discord.Interaction):
     except Exception as e:
         print(f'An error occured: {e}')
 
+#Slash command to create teams
 @tree.command(
     name = 'matchmake',
     description = "Form teams for all players enrolled in the game.",
@@ -846,22 +874,23 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
         volunteer_users = [member.name for member in volunteer_role.members]
         volunteer_ids = [member.id for member in volunteer_role.members]
 
-#region TESTCODE
-############################################################################################################
-#   TESTING ONLY
+    #region TESTCODE
+    ############################################################################################################
+    #   TESTING ONLY
         player_users = [500012,500028,500001,500008,500015,500002,500018,500026,500027,500030,500042,500044,500014,
             500022,500032,500035,500023,500041,500040,500029]
         
         volunteer_ids = [500031,500020,500037,500007,500011,500017,500039,]
-############################################################################################################
-#endregion TESTCODE
+    ############################################################################################################
+    #endregion TESTCODE
 
         if len(player_users) % 10 != 0:
             await interaction.response.send_message('There is not a multiple of 10 players, please see /players', ephemeral = True)
             return
 
-        player_list = np.array_split(create_playerlist(player_users), int(len(player_users)/10))
-        # player_list = np.array_split(random.shuffle(create_playerlist(player_users)), int(len(player_users)/10))
+        initial_list = create_playerlist(player_users)
+        random.shuffle(initial_list)
+        player_list = np.array_split(initial_list, int(len(initial_list)/10))
 
         for idx in range(1, int(len(player_users)/10)+1):
             query = '''INSERT INTO Games (gameDate, gameNumber, gameLobby, isComplete) VALUES (DATE('now'), ?, ?, 0)'''
@@ -975,6 +1004,78 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
     except Exception as e:
         print(f'An error occured: {e}')
 
+#Slash command to end a match
+@tree.command(
+    name = 'win',
+    description = "Set the winning team for open games by providing the lobby number and winning team color",
+    guild = discord.Object(GUILD)
+    # ,options=[
+    #     create_option(
+    #         name="choice",
+    #         description="Your choice",
+    #         option_type=3,  # 3 is the type for string
+    #         required=True,
+    #         choices=[
+    #             create_choice(name="Option 1", value="option1"),
+    #             create_choice(name="Option 2", value="option2")
+    #         ])]
+    )
+async def win(interaction: discord.Interaction, lobby: int, winner: str):
+    try:
+        dbconn = sqlite3.connect("bot.db")
+        cur = dbconn.cursor()
+
+        query = 'SELECT EXISTS(SELECT gameID FROM Games WHERE isComplete = 0 AND gameLobby = ?)'
+        cur.execute(query, [lobby])
+        data = cur.fetchone()
+        if data[0] != 1:
+            await interaction.response.send_message(f"Lobby #{lobby} is not an active game, see /activegames", ephemeral=True)
+            return
+        
+    except sqlite3.Error as e:
+        print(f"Terminating due to database active games error: {e}")
+        return
+    
+    finally:
+        cur.close()
+        dbconn.close() 
+    
+    if (winner.lower() != "red" and winner.lower() != "blue"):
+        await interaction.response.send_message(f"{winner} is not a team name, choose blue or red", ephemeral=True)
+        return
+    
+    if(update_win(lobby, winner)):
+        await interaction.response.send_message(f"The winner for Lobby {lobby} has been set for the {winner} team!")
+
+#Slash command to see active games
+@tree.command(
+    name = 'activegames',
+    description = "Shows all games that have not been closed with /win",
+    guild = discord.Object(GUILD))
+async def activegames(interaction: discord.Interaction):
+    try:
+        dbconn = sqlite3.connect("bot.db")
+        cur = dbconn.cursor()
+
+        query = f"SELECT * FROM Games WHERE isComplete = 0"
+        cur.execute(query)
+        data = cur.fetchall()
+    
+        embedGames = discord.Embed(color = discord.Color.green(), title = 'Active Games')
+        embedGames.set_footer(text = f'Total games: {len(data)}')
+        for row in data:
+            embedGames.add_field(name = '', value = f"Date:{row[1]}")
+            embedGames.add_field(name = '', value = f"Match #{row[2]}")
+            embedGames.add_field(name = '', value = f"Lobby #{row[3]}")
+
+        await interaction.response.send_message(embed = embedGames)
+        
+    except sqlite3.Error as e:
+        print(f"Terminating due to database active games error: {e}")
+
+    finally:
+        cur.close()
+        dbconn.close() 
 
 
 """
