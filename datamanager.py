@@ -18,8 +18,8 @@ def focus_next_widget(event):
 
 def saveplayer():
     cmd = "UPDATE Player SET discordName = ?, discordID = ?, riotID = ?, lolRank = ?, preferences = ?, toxicity = ?, tieroverride = ? WHERE discordID = ?"
-    args = (txtDiscordName.get(1.0, END), txtDiscordID.get(1.0, END), txtriotID.get(1.0, END), txtlolRank.get(1.0, END), 
-            txtpreferences.get(1.0, END), txtToxicity.get(1.0, END), txtTierOverride.get(1.0, END), result[idx]["discordID"])
+    args = (txtDiscordName.get(), txtDiscordID.get(), txtriotID.get(), txtlolRank.get(), 
+            txtpreferences.get(), txtToxicity.get(), txtTierOverride.get(), result[idx]["discordID"])
     dbconn.execute(cmd, args)
     dbconn.commit()
     loadPlayers()
@@ -58,30 +58,29 @@ def onplayerselect(evt):
     global idx
     idx = int(w.curselection()[0])
 
-    txtDiscordName.delete(1.0, END)
+    txtDiscordName.delete(0, END)
     txtDiscordName.insert(END, result[idx]["discordName"])
-    txtDiscordID.delete(1.0, END)
+    txtDiscordID.delete(0, END)
     txtDiscordID.insert(END, result[idx]["DiscordID"])
-    txtriotID.delete(1.0, END)
+    txtriotID.delete(0, END)
     txtriotID.insert(END, result[idx]["riotID"])
-    txtlolRank.delete(1.0, END)
+    txtlolRank.delete(0, END)
     txtlolRank.insert(END, result[idx]["lolRank"])
-    txtpreferences.delete(1.0, END)
+    txtpreferences.delete(0, END)
     txtpreferences.insert(END, result[idx]["preferences"])            
-    txtToxicity.delete(1.0, END)
+    txtToxicity.delete(0, END)
     txtToxicity.insert(END, result[idx]["toxicity"])           
-    txtTierOverride.delete(1.0, END)
+    txtTierOverride.delete(0, END)
     txtTierOverride.insert(END, result[idx]["tieroverride"])        
 
 def clearplayertext():
-    txtDiscordName.delete(1.0, END)
-    txtDiscordID.delete(1.0, END)
-    txtriotID.delete(1.0, END)
-    txtlolRank.delete(1.0, END)
-    txtpreferences.delete(1.0, END)
-    txtToxicity.delete(1.0, END)
-    txtTierOverride.delete(1.0, END)
-
+    txtDiscordName.delete(0, END)
+    txtDiscordID.delete(0, END)
+    txtriotID.delete(0, END)
+    txtlolRank.delete(0, END)
+    txtpreferences.delete(0, END)
+    txtToxicity.delete(0, END)
+    txtTierOverride.delete(0, END)
 
 #endregion FUNCTIONS
 
@@ -119,21 +118,37 @@ lblpreferences = Label(tabPlayerData, height=1, width=20, text="TJMAS Preference
 lblToxicity = Label(tabPlayerData, height=1, width=20, text="Toxicity")
 lblTierOverride = Label(tabPlayerData, height=1, width=20, text="Tier Override")
 
-txtDiscordName = Text(tabPlayerData, height=1, width=20)
-txtDiscordID = Text(tabPlayerData, height=1, width=20)
-txtriotID = Text(tabPlayerData, height=1, width=20)
-txtlolRank = Text(tabPlayerData, height=1, width=20)
-txtpreferences = Text(tabPlayerData, height=1, width=20)
-txtToxicity = Text(tabPlayerData, height=1, width=20)
-txtTierOverride = Text(tabPlayerData, height=1, width=20)
+# txtDiscordName = Text(tabPlayerData, height=1, width=20)
+# txtDiscordID = Text(tabPlayerData, height=1, width=20)
+# txtriotID = Text(tabPlayerData, height=1, width=20)
+# txtlolRank = Text(tabPlayerData, height=1, width=20)
+# txtpreferences = Text(tabPlayerData, height=1, width=20)
+# txtToxicity = Text(tabPlayerData, height=1, width=20)
+# txtTierOverride = Text(tabPlayerData, height=1, width=20)
+
+txtDiscordName = Entry(tabPlayerData, width=20)
+txtDiscordID = Entry(tabPlayerData, width=20)
+txtriotID = Entry(tabPlayerData, width=20)
+txtlolRank = Entry(tabPlayerData, width=20)
+txtpreferences = Entry(tabPlayerData, width=20)
+txtToxicity = Entry(tabPlayerData, width=20)
+txtTierOverride = Entry(tabPlayerData, width=20)
 
 # Define buttons
 btnNew = Button(tabPlayerData, text="New", width=10, command=addnewplayer)
 btnSave = Button(tabPlayerData, text="Save", width=10, command=saveplayer)
 btnDelete = Button(tabPlayerData, text="Delete", width=10, command=deleteplayer)
 
+# Bind actions to elements
 listbox.bind('<<ListboxSelect>>', onplayerselect)
 
+txtDiscordName.bind("<Tab>", focus_next_widget)
+txtDiscordID.bind("<Tab>", focus_next_widget)
+txtriotID.bind("<Tab>", focus_next_widget)
+txtlolRank.bind("<Tab>", focus_next_widget)
+txtpreferences.bind("<Tab>", focus_next_widget)
+
+# Add all of the objects to the grid
 listbox.grid(row=1, column=0, rowspan=7, padx=10, pady=10)
 
 lblDiscordName.grid(row=1, column=1)
@@ -153,11 +168,6 @@ txtpreferences.grid(row=5, column=2)
 txtToxicity.grid(row=6, column=2) 
 txtTierOverride.grid(row=7, column=2)
 
-txtDiscordName.bind("<Tab>", focus_next_widget)
-txtDiscordID.bind("<Tab>", focus_next_widget)
-txtriotID.bind("<Tab>", focus_next_widget)
-txtlolRank.bind("<Tab>", focus_next_widget)
-txtpreferences.bind("<Tab>", focus_next_widget)
 
 btnNew.grid(row=8, column=0, pady=10)
 btnSave.grid(row=8, column=2)
