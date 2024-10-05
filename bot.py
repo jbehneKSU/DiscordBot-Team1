@@ -35,6 +35,7 @@ SHEETS_ID = os.getenv('GOOGLE_SHEETS_ID')#Gets the Google Sheets ID from the .en
 SHEETS_NAME = os.getenv('GOOGLE_SHEETS_NAME')#Gets the google sheets name from the .env and sets it to SHEETS_NAME
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']#Allows the app to read and write to the google sheet.
 SERVICE_ACCOUNT_FILE = 'token.json' #Location of Google Sheets credential file
+RIOT_API_KEY = os.getenv('RIOT_API_KEY')#Gets the Riot API Key from the .env and sets it to RIOT_API_KEY
 
 # Create credentials object for Google sheets
 creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
@@ -254,6 +255,128 @@ class volunteerButtons(discord.ui.View):
 
 
 #region METHODS
+
+#Method to return a player's rank from the Riot API
+def update_riot_rank(interaction: discord.Interaction):
+    # Get the Discord user's information
+    member = interaction.user
+
+    # Set the headers, including the API key
+    headers = {'X-Riot-Token': RIOT_API_KEY}
+
+    # Parms for id data returned by API calls
+    puuid = ""
+    id = ""
+
+    # Parms for creating Riot ID from database
+    game_name = ""
+    tagline = ""
+
+    try:
+        # Create database connection
+        dbconn = sqlite3.connect("bot.db")
+        cur = dbconn.cursor()
+
+        # Execute query to get the RiotID for the player
+        query = 'SELECT riotID FROM Player WHERE DiscordID = ?'
+        args = (interaction.user.id,)
+        cur.execute(query, args)
+        result = cur.fetchone()
+
+        # If result is empty then something went wrong finding the riotID
+        if len(result) == 0:
+            return False
+
+        # Parse the name and tagline by splitting the Riot ID on the # character - this should be checked as valid at entry
+        game_name = result[0].split("#")[0]
+        tagline = result[0].split("#")[1]
+
+    except sqlite3.Error as e:
+        # Any errors in the database results in a failure
+        print (f'Database error occurred getting riot ID: {e}')
+        return False
+
+    finally:
+        # Close the database connection
+        cur.close()
+        dbconn.close() 
+
+    # Define the endpoint URL to get the player's PUUID 
+    url = f'https://americas.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tagline}' 
+
+    # Make the GET request to the Riot API
+    response = requests.get(url, headers=headers)
+
+    # Check if the request was successful
+    if response.status_code == 200:
+        # Parse the JSON response and set the puuid
+        account_info = response.json()
+        puuid = account_info['puuid']
+
+    else:
+        # Print the error and return False
+        print(f'Error: {response.status_code} - {response.text}')
+        return False
+        
+    # Define the endpoint URL to get the player's Encrypted ID 
+    url = f'https://na1.api.riotgames.com//lol/summoner/v4/summoners/by-puuid/{puuid}' 
+
+    # Make the GET request to the Riot API
+    response = requests.get(url, headers=headers)
+
+    # Check if the request was successful
+    if response.status_code == 200:
+        # Parse the JSON response and set the id
+        account_info = response.json()
+        id = account_info['id']
+
+    else:
+        # Print the error and return False
+        print(f'Error: {response.status_code} - {response.text}')
+        return False
+
+    # Define the endpoint URL to get the player's rank information 
+    url = f'https://na1.api.riotgames.com/lol/league/v4/entries/by-summoner/{id}' 
+
+    # Make the GET request to the Riot API
+    response = requests.get(url, headers=headers)
+
+    # Check if the request was successful
+    if response.status_code == 200:
+        # Parse the JSON response and set the rank
+        account_info = response.json()
+        rank = account_info[0]['tier']
+
+        try:
+            # Create the database connection
+            dbconn = sqlite3.connect("bot.db")
+            cur = dbconn.cursor()
+
+            # Execute and commit the update to set the rank for the Discord player
+            query = 'UPDATE Player SET lolRank = ? WHERE DiscordID = ?'
+            args = (rank, interaction.user.id,)
+            cur.execute(query, args)
+            dbconn.commit()
+
+            # At this point everything has worked and a True result is returned
+            return True
+        
+        except sqlite3.Error as e:
+            # Any issues with the update will result in a False return
+            print (f'Database error occurred getting riot ID: {e}')
+            return False
+
+        finally:
+            # Close the database connections
+            cur.close()
+            dbconn.close() 
+
+    else:
+        # Print the error
+        print(f'Error: {response.status_code} - {response.text}')
+
+    # If the code makes it to this point then there has been a critical failure and a False is returned
+    return False
 
 #Method to return string of preferences for the /preferences embed
 def get_preferences(interaction: discord.Interaction):
@@ -488,23 +611,31 @@ def update_toxicity(interaction, discord_username):
 
 #Method to update Riot ID
 def update_riotid(interaction: discord.Interaction, id):
+    if '#' not in id:
+        return "Please enter your Riot ID as {gamename}#{tagline}"
+    
     try:
+        # Create the database connection
         dbconn = sqlite3.connect("bot.db")
         cur = dbconn.cursor()
+
+        # Execute the update to set the Riot ID for the Discord player
         query = f"UPDATE Player SET riotID = ? WHERE discordID = ?"
         args = (id, interaction.user.id)
         cur.execute(query, args)
         dbconn.commit()
-            
+        
+        return True
+    
     except sqlite3.Error as e:
+        # Print the error if anything goes wrong
         print (f'Database error occurred updating Riot ID: {e}')
-        return e
+        return "Error updating ID, please ensure you enter your riot ID as {gamename}#{tagline} "
 
     finally:
+        # Close the database connection
         cur.close()
         dbconn.close()     
-
-
 
 # Method to assign roles to players based on their preferred priority
 def assign_roles(players):
@@ -693,9 +824,12 @@ def update_win(lobby, winner):
     description = 'Update your Riot ID <Game Name><#Tagline>',
     guild = discord.Object(GUILD))
 async def riotid(interaction, id: str):
-    register_player()
-    update_riotid(interaction, id)
-    await interaction.response.send_message(f'Your League of Legends ID has been updated to {id}.', ephemeral=True)
+    register_player(interaction)
+    status = update_riotid(interaction, id)
+    if (status == True):
+        await interaction.response.send_message(f'Your Riot ID has been updated to {id}.', ephemeral=True)
+    else:
+        await interaction.response.send_message(f'{status}', ephemeral=True)
 
 #Command to start check-in
 @tree.command(
@@ -777,6 +911,8 @@ async def remove(interaction: discord.Interaction):
         description='Find all players and volunteers currently enrolled in the game',
         guild = discord.Object(GUILD))
 async def players(interaction: discord.Interaction):
+    message = ''
+
     try:
         #Finds all players in discord, adds them to a list
         player_users = []
@@ -807,7 +943,6 @@ async def players(interaction: discord.Interaction):
             embedVolunteers.add_field(name = '', value = vol)
         
         next_increment = 10 - (player_count % 10)
-        message = ''
         if player_count == 10:
             message += "There is a full lobby with 10 players!"
             embedMessage = discord.Embed(color = discord.Color.dark_green(), title = 'Players/Volunteers')
@@ -1024,6 +1159,10 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
 
     except Exception as e:
         print(f'An error occured: {e}')
+
+    finally:
+        cur.close()
+        dbconn.close()
 
 #Slash command to end a match
 @tree.command(
