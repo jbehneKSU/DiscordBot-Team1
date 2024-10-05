@@ -1,9 +1,3 @@
-'''
-pip install discord-py-interactions
-pip install discord-py-slash-command
-
-'''
-
 import asyncio
 import discord
 import os
@@ -12,14 +6,13 @@ from discord import app_commands
 from discord.utils import get
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
-from discord.ext import commands
+# from discord.ext import commands
 import sqlite3
 import random
-from operator import itemgetter
+# from operator import itemgetter
 import itertools
 import numpy as np
-# from discord_slash import SlashCommand, SlashContext
-# from discord_slash.utils.manage_commands import create_choice, create_option
+import requests
 # import logging
 # import gspread
 # from oauth2client.service_account import ServiceAccountCredentials
@@ -43,7 +36,7 @@ SHEETS_NAME = os.getenv('GOOGLE_SHEETS_NAME')#Gets the google sheets name from t
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']#Allows the app to read and write to the google sheet.
 SERVICE_ACCOUNT_FILE = 'token.json' #Location of Google Sheets credential file
 
-# Create credentials object
+# Create credentials object for Google sheets
 creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
 
 @client.event
@@ -99,7 +92,7 @@ class Team:
                   priority: {self.bot_laner.bot_priority} (Tier {self.bot_laner.tier})\nSupport: {self.support.username} priority: {self.support.support_priority} (Tier {self.support.tier})"
 
 #Dropdown class for rendering the player role preference dropdown options
-class Dropdown(discord.ui.Select):
+class PreferenceDropdown(discord.ui.Select):
     def __init__(self, position):
         options = [
             discord.SelectOption(label=f'{position} - 1', description=f'Highest priority'),
@@ -131,14 +124,14 @@ class FillButton(discord.ui.Button):
 #         return
 
 #Dropdown view for rendering all dropdowns for player role preferences
-class DropdownView(discord.ui.View):
+class PreferenceDropdownView(discord.ui.View):
     def __init__(self):
         super().__init__()
-        self.add_item(Dropdown("Top"))
-        self.add_item(Dropdown("Jng"))
-        self.add_item(Dropdown("Mid"))
-        self.add_item(Dropdown("ADC"))
-        self.add_item(Dropdown("Sup"))
+        self.add_item(PreferenceDropdown("Top"))
+        self.add_item(PreferenceDropdown("Jng"))
+        self.add_item(PreferenceDropdown("Mid"))
+        self.add_item(PreferenceDropdown("ADC"))
+        self.add_item(PreferenceDropdown("Sup"))
         # self.add_item(FillButton()) 
 
 #Checkin button class for checking in to tournaments.
@@ -732,7 +725,7 @@ async def roleselect(interaction):
     register_player(interaction)
     embed = discord.Embed(title="Select your role preferences (1 (high) to 5 (never))", 
                           description=get_preferences(interaction), color=0x00ff00)
-    view = DropdownView()
+    view = PreferenceDropdownView()
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 #Command to start volunteer
