@@ -29,13 +29,18 @@ intents.members = True
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
-TOKEN = os.getenv('BOT_TOKEN')#Gets the bot's password token from the .env file and sets it to TOKEN.
-GUILD = os.getenv('GUILD_ID')#Gets the server's id from the .env file and sets it to GUILD.
-SHEETS_ID = os.getenv('GOOGLE_SHEETS_ID')#Gets the Google Sheets ID from the .env file and sets it to SHEETS_ID.
-SHEETS_NAME = os.getenv('GOOGLE_SHEETS_NAME')#Gets the google sheets name from the .env and sets it to SHEETS_NAME
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets']#Allows the app to read and write to the google sheet.
+# Global variables set at startup and do not change
+TOKEN = os.getenv('BOT_TOKEN') #Gets the bot's password token from the .env file and sets it to TOKEN.
+GUILD = os.getenv('GUILD_ID') #Gets the server's id from the .env file and sets it to GUILD.
+SHEETS_ID = os.getenv('GOOGLE_SHEETS_ID') #Gets the Google Sheets ID from the .env file and sets it to SHEETS_ID.
+SHEETS_NAME = os.getenv('GOOGLE_SHEETS_NAME') #Gets the google sheets name from the .env and sets it to SHEETS_NAME
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets'] #Allows the app to read and write to the google sheet.
 SERVICE_ACCOUNT_FILE = 'token.json' #Location of Google Sheets credential file
-RIOT_API_KEY = os.getenv('RIOT_API_KEY')#Gets the Riot API Key from the .env and sets it to RIOT_API_KEY
+RIOT_API_KEY = os.getenv('RIOT_API_KEY') #Gets the Riot API Key from the .env and sets it to RIOT_API_KEY
+
+# Global variables set at startup and can be changed via commands
+MAX_DEGREE_TIER = 2 #This number is used to determine how far apart in tiers players in opposing lanes can be during matchmaking
+USE_RANDOM_SORT = True #This determines whether the player list is shuffled or sorted by tier in matchmaking
 
 # Create credentials object for Google sheets
 creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
@@ -158,6 +163,7 @@ class CheckinButtons(discord.ui.View):
         member = interaction.user
 
         riotID = register_player(interaction)
+        rankstatus, rank = update_riot_rank(interaction)
 
         if player in member.roles:
             await interaction.response.edit_message(view = self)
@@ -165,7 +171,12 @@ class CheckinButtons(discord.ui.View):
             return "Is already checked in"
         await member.add_roles(player)
         await interaction.response.edit_message(view = self)
-        await interaction.followup.send(f'You have checked in with Riot ID "{riotID}"!  Be sure to check your /roleselect and update your /riotID if needed.', ephemeral = True)
+
+        if rankstatus:
+            await interaction.followup.send(f'You have checked in with Riot ID "{riotID}" and your Rank was updated to {rank}!  Be sure to check your /roleselect and update your /riotID if needed.', ephemeral = True)
+        else:
+            await interaction.followup.send(f'You have checked in with Riot ID "{riotID}" but your Rank could not be found!  Be sure to check your /roleselect and update your /riotID if needed.', ephemeral = True)
+
         # await roleselect(interaction)
         return "Checked in"        
 
@@ -294,9 +305,6 @@ def reset_db_match(match: int):
 
 #Method to return a player's rank from the Riot API
 def update_riot_rank(interaction: discord.Interaction):
-    # Get the Discord user's information
-    member = interaction.user
-
     # Set the headers, including the API key
     headers = {'X-Riot-Token': RIOT_API_KEY}
 
@@ -321,7 +329,11 @@ def update_riot_rank(interaction: discord.Interaction):
 
         # If result is empty then something went wrong finding the riotID
         if len(result) == 0:
-            return False
+            return False, ""
+
+        # If the # character is missing then this is not a valid ID
+        if '#' not in result[0]:
+            return False, ""
 
         # Parse the name and tagline by splitting the Riot ID on the # character - this should be checked as valid at entry
         game_name = result[0].split("#")[0]
@@ -330,7 +342,7 @@ def update_riot_rank(interaction: discord.Interaction):
     except sqlite3.Error as e:
         # Any errors in the database results in a failure
         print (f'Database error occurred getting riot ID: {e}')
-        return False
+        return False, ""
 
     finally:
         # Close the database connection
@@ -352,7 +364,7 @@ def update_riot_rank(interaction: discord.Interaction):
     else:
         # Print the error and return False
         print(f'Error: {response.status_code} - {response.text}')
-        return False
+        return False, ""
         
     # Define the endpoint URL to get the player's Encrypted ID 
     url = f'https://na1.api.riotgames.com//lol/summoner/v4/summoners/by-puuid/{puuid}' 
@@ -369,7 +381,7 @@ def update_riot_rank(interaction: discord.Interaction):
     else:
         # Print the error and return False
         print(f'Error: {response.status_code} - {response.text}')
-        return False
+        return False, ""
 
     # Define the endpoint URL to get the player's rank information 
     url = f'https://na1.api.riotgames.com/lol/league/v4/entries/by-summoner/{id}' 
@@ -381,7 +393,12 @@ def update_riot_rank(interaction: discord.Interaction):
     if response.status_code == 200:
         # Parse the JSON response and set the rank
         account_info = response.json()
-        rank = account_info[0]['tier']
+        
+        # If the player is not ranked the result will be empty so we will default to Bronze, otherwise use the returned rank
+        if len(account_info) == 0:
+            rank = "BRONZE"
+        else:
+            rank = account_info[0]['tier']
 
         try:
             # Create the database connection
@@ -395,12 +412,12 @@ def update_riot_rank(interaction: discord.Interaction):
             dbconn.commit()
 
             # At this point everything has worked and a True result is returned
-            return True
+            return True, rank
         
         except sqlite3.Error as e:
             # Any issues with the update will result in a False return
             print (f'Database error occurred getting riot ID: {e}')
-            return False
+            return False, ""
 
         finally:
             # Close the database connections
@@ -412,7 +429,7 @@ def update_riot_rank(interaction: discord.Interaction):
         print(f'Error: {response.status_code} - {response.text}')
 
     # If the code makes it to this point then there has been a critical failure and a False is returned
-    return False
+    return False, ""
 
 #Method to return string of preferences for the /preferences embed
 def get_preferences(interaction: discord.Interaction):
@@ -569,6 +586,31 @@ def check_database():
                 , (Participation + Wins + MVPs - Toxicity + GamesPlayed) TotalPoints
             FROM totals t
             INNER JOIN Player p ON p.discordID = t.discordID""")        
+
+        cur.execute("""CREATE VIEW IF NOT EXISTS vw_Player AS
+                SELECT 
+                CASE WHEN COALESCE(tieroverride,0) = 0 OR COALESCE(tieroverride,0) = '' THEN 
+                    CASE LOWER(lolRank)
+                    WHEN 'bronze' THEN 9
+                    WHEN 'silver' THEN 8 
+                    WHEN 'gold' THEN 7 
+                    WHEN 'platinum' THEN 6 
+                    WHEN 'emerald' THEN 5 
+                    WHEN 'diamond' THEN 4 
+                    WHEN 'master' THEN 3 
+                    WHEN 'grandmaster' THEN 2 
+                    WHEN 'challenger' THEN 1 
+                    END 
+                ELSE tieroverride
+                END Tier
+                , RiotID
+                , discordID
+                , SUBSTRING(preferences, 1, 1) AS top_priority
+                , SUBSTRING(preferences, 2, 1) AS jungle_priority
+                , SUBSTRING(preferences, 3, 1) AS mid_priority
+                , SUBSTRING(preferences, 4, 1) AS bot_priority
+                , SUBSTRING(preferences, 5, 1) AS support_priority
+            FROM Player""")
 
         print ("Database is configured")
     except sqlite3.Error as e:
@@ -765,19 +807,25 @@ def find_balanced_teams(players, degree):
 
 # This is the primary team formation method
 def balance_teams(players):
+    # Attempt to create two teams with a degree of tier difference of 1
     red_team, blue_team = find_balanced_teams(players, 1)
     
+    # Set # of attempts to 1
     attempts = 1
-    while red_team is None or blue_team is None:
-        if attempts <= 10:
-            red_team, blue_team = find_balanced_teams(players, 1)
-        elif 10 < attempts <= 20:
-            red_team, blue_team = find_balanced_teams(players, 2)
-        elif attempts > 20:
-            return None, None    
 
+    # Begin a loop to run while either team is still not formed
+    while red_team is None or blue_team is None:
+        # Each iteration of the loop will try again, every 10 iterations will add one more degree of separation between opposing lanes
+        red_team, blue_team = find_balanced_teams(players, attempts//10+1)
+
+        # Increment the attempts counter
         attempts += 1
 
+        # Check to see if the number of attempts has met or exceeded the max degree setting and exit if true
+        if attempts >= MAX_DEGREE_TIER * 10:
+            return None, None    
+
+    # If both teams were formed this method ends with returning both teams
     return blue_team, red_team
 
 #Method to take users in the player role and pull their preferences to pass to the create_teams method
@@ -789,29 +837,8 @@ def create_playerlist(player_users):
 
         placeholders = ', '.join('?' for _ in player_users)
         query = f"""
-            SELECT 
-                CASE WHEN COALESCE(tieroverride,0) = 0 THEN 
-                    CASE lolRank
-                    WHEN 'Bronze' THEN 9
-                    WHEN 'Silver' THEN 8 
-                    WHEN 'Gold' THEN 7 
-                    WHEN 'Platinum' THEN 6 
-                    WHEN 'Emerald' THEN 5 
-                    WHEN 'Diamond' THEN 4 
-                    WHEN 'Master' THEN 3 
-                    WHEN 'Grandmaster' THEN 2 
-                    WHEN 'Challenger' THEN 1 
-                    END 
-                ELSE tieroverride
-                END Tier
-                , RiotID
-                , discordID
-                , SUBSTRING(preferences, 1, 1) AS top_priority
-                , SUBSTRING(preferences, 2, 1) AS jungle_priority
-                , SUBSTRING(preferences, 3, 1) AS mid_priority
-                , SUBSTRING(preferences, 4, 1) AS bot_priority
-                , SUBSTRING(preferences, 5, 1) AS support_priority
-            FROM Player WHERE discordID IN ({placeholders})
+            SELECT *
+            FROM vw_Player WHERE discordID IN ({placeholders})
             ORDER BY Tier"""
 
         cur.execute(query, player_users)
@@ -862,8 +889,12 @@ def update_win(lobby, winner):
 async def riotid(interaction, id: str):
     register_player(interaction)
     status = update_riotid(interaction, id)
+    rankupdate, newrank = update_riot_rank(interaction)
     if (status == True):
-        await interaction.response.send_message(f'Your Riot ID has been updated to {id}.', ephemeral=True)
+        if rankupdate:
+            await interaction.response.send_message(f'Your Riot ID has been updated to {id} and your Rank has been updated to {newrank}.', ephemeral=True)
+        else:
+            await interaction.response.send_message(f'Your Riot ID has been updated to {id} but your Rank could not be found, please check the name.', ephemeral=True)
     else:
         await interaction.response.send_message(f'{status}', ephemeral=True)
 
@@ -1066,7 +1097,8 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
         initial_list = create_playerlist(player_users)
 
         # This shuffle will help randomize teams as opposed to sorting them by tier which tended to create the same teams
-        random.shuffle(initial_list)
+        if USE_RANDOM_SORT:
+            random.shuffle(initial_list)
 
         # Now create a list of lists of 10 players, this is how lobbies are created (10 = 1 lobby, 20 = 2 lobbies, 30 = 3 lobbies)
         player_list = np.array_split(initial_list, int(len(initial_list)/10))
