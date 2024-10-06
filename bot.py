@@ -735,10 +735,10 @@ def balance_teams(players):
     while red_team is None or blue_team is None:
         if attempts <= 10:
             red_team, blue_team = find_balanced_teams(players, 1)
-        elif 20 <= attempts > 10:
+        elif 10 < attempts <= 20:
             red_team, blue_team = find_balanced_teams(players, 2)
         elif attempts > 20:
-            return "Teams are not balanced. Please adjust priorities or tiers."    
+            return None, None    
 
         attempts += 1
 
@@ -987,6 +987,7 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
         # If EXISTS does not return a 0 there are games that have not been closed and the method ends
         if result[0] != 0:
             await interaction.response.send_message('There are one or more incomplete games that need to be closed, see /activegames', ephemeral = True)
+            print("Matchmake command called with incomplete games still active.")
             return
 
         # Query to check if the match number has been used already today
@@ -997,6 +998,7 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
         # If EXISTS does not return a 0 then the given match number has already been used today and the method ends
         if result[0] != 0:
             await interaction.response.send_message(f'Match number {match_number} has already been used today', ephemeral = True)
+            print("Matchmake command called using a match number that was already used for today.")
             return
 
         #Finds all players in discord, adds them to a list
@@ -1021,15 +1023,16 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
         # Ensure an even split of 10 players and end the method if not
         if len(player_users) % 10 != 0:
             await interaction.response.send_message('There is not a multiple of 10 players, please see /players', ephemeral = True)
+            print("Matchmake command called without a correct multiple of players.")
             return
 
         # This passes the list of discord user IDs to the create_playerlist function to get the player data from the database as a list of Player class
         initial_list = create_playerlist(player_users)
 
-        # This shuffle will help randomize teams as opposes to sorting them by tier which tended to create the same teams
+        # This shuffle will help randomize teams as opposed to sorting them by tier which tended to create the same teams
         random.shuffle(initial_list)
 
-        # Now create a list of lists of 10 players, this is how lobbies are create (10 = 1 lobby, 20 = 2 lobbies, 30 = 3 lobbies)
+        # Now create a list of lists of 10 players, this is how lobbies are created (10 = 1 lobby, 20 = 2 lobbies, 30 = 3 lobbies)
         player_list = np.array_split(initial_list, int(len(initial_list)/10))
 
         # Loop through the list of list of Players to create 2 teams (blue/red) of 5 for each list.  
@@ -1047,6 +1050,11 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
             # Call the primary team creation function by passing the current list of 10 Players, this returns the two teams 
             # Because idx corresponds to Lobby# and the array is 0 based, subtract 1 from the lobby
             blueteam, redteam = balance_teams(player_list[idx-1])
+
+            if blueteam is None or redteam is None:
+                await interaction.response.send_message(f'Team could not be formed for lobby {idx}, please adjust role preference or tier scores and try again', ephemeral = True)
+                print("Matchmake command failed to form a team.")
+                return
 
             # This IF will execute if the lobby # is 1 and build the Lobby 1 embed and insert the volunteers into the Lobby 1 game
             if idx == 1:
