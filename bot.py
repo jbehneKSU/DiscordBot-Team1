@@ -256,6 +256,42 @@ class volunteerButtons(discord.ui.View):
 
 #region METHODS
 
+#Method to cleanup database game entries if a matchmake command fails
+def reset_db_match(match: int):
+    try:
+        # Create database connection
+        dbconn = sqlite3.connect("bot.db")
+        cur = dbconn.cursor()
+
+        # Execute query to get all open lobbies for the failed match
+        query = "SELECT gameID FROM Games WHERE GameNumber = ? AND gameDate = DATE('now')"
+        args = (match,)
+        cur.execute(query, args)
+        result = cur.fetchall()
+
+        # Loop through each GameID that was created
+        for row in result:
+            # First delete the game details for the GameID
+            query = "DELETE FROM GameDetail WHERE GameID = ?"
+            args = (row[0],)
+            cur.execute(query, args)
+            dbconn.commit()
+
+            # Second delete the game record itself
+            query = "DELETE FROM Games WHERE GameID = ?"
+            args = (row[0],)
+            cur.execute(query, args)
+            dbconn.commit()        
+
+    except sqlite3.Error as e:
+        # Any errors in the database results in a failure
+        print (f'Database error occurred purging incomplete match {match} : {e}')
+
+    finally:
+        # Close the database connection
+        cur.close()
+        dbconn.close()     
+
 #Method to return a player's rank from the Riot API
 def update_riot_rank(interaction: discord.Interaction):
     # Get the Discord user's information
@@ -1038,6 +1074,16 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
         # Loop through the list of list of Players to create 2 teams (blue/red) of 5 for each list.  
         # Len() uses +1 so that idx corresponds with the Lobby # (1,2,3)
         for idx in range(1, int(len(player_users)/10)+1):
+            # Call the primary team creation function by passing the current list of 10 Players, this returns the two teams 
+            # Because idx corresponds to Lobby# and the array is 0 based, subtract 1 from the lobby
+            blueteam, redteam = balance_teams(player_list[idx-1])
+
+            if blueteam is None or redteam is None:
+                reset_db_match(match_number)
+                await interaction.response.send_message(f'Team could not be formed for Lobby #{idx}, please adjust role preference or tier scores and try again', ephemeral = True)
+                print("Matchmake command failed to form a team.")
+                return
+
             # Query to insert a new game using today's date, passing the game number from the input, the index of the loop for the lobby, and complete is 0
             query = '''INSERT INTO Games (gameDate, gameNumber, gameLobby, isComplete) VALUES (DATE('now'), ?, ?, 0)'''
             args = (match_number, idx,)
@@ -1046,15 +1092,6 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
 
             # This will capture the ID of the game that was just inserted to be used for the GameDetail table
             gameID = cur.lastrowid
-
-            # Call the primary team creation function by passing the current list of 10 Players, this returns the two teams 
-            # Because idx corresponds to Lobby# and the array is 0 based, subtract 1 from the lobby
-            blueteam, redteam = balance_teams(player_list[idx-1])
-
-            if blueteam is None or redteam is None:
-                await interaction.response.send_message(f'Team could not be formed for lobby {idx}, please adjust role preference or tier scores and try again', ephemeral = True)
-                print("Matchmake command failed to form a team.")
-                return
 
             # This IF will execute if the lobby # is 1 and build the Lobby 1 embed and insert the volunteers into the Lobby 1 game
             if idx == 1:
