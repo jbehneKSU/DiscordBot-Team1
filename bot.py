@@ -6,6 +6,8 @@ from discord import app_commands
 from discord.utils import get
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
+import google.generativeai as genai
+import csv, io, json
 # from discord.ext import commands
 import sqlite3
 import random
@@ -29,7 +31,7 @@ intents.members = True
 client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
-# Global variables set at startup and do not change
+# Variables set at startup that will not change
 TOKEN = os.getenv('BOT_TOKEN') #Gets the bot's password token from the .env file and sets it to TOKEN.
 GUILD = os.getenv('GUILD_ID') #Gets the server's id from the .env file and sets it to GUILD.
 SHEETS_ID = os.getenv('GOOGLE_SHEETS_ID') #Gets the Google Sheets ID from the .env file and sets it to SHEETS_ID.
@@ -37,16 +39,25 @@ SHEETS_NAME = os.getenv('GOOGLE_SHEETS_NAME') #Gets the google sheets name from 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets'] #Allows the app to read and write to the google sheet.
 SERVICE_ACCOUNT_FILE = 'token.json' #Location of Google Sheets credential file
 RIOT_API_KEY = os.getenv('RIOT_API_KEY') #Gets the Riot API Key from the .env and sets it to RIOT_API_KEY
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY') #Gets the API key for Google Gemini API
 
-# Global variables set at startup and can be changed via commands
-MAX_DEGREE_TIER = 2 #This number is used to determine how far apart in tiers players in opposing lanes can be during matchmaking
-USE_RANDOM_SORT = True #This determines whether the player list is shuffled or sorted by tier in matchmaking
 
 # Create credentials object for Google sheets
 creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
 
+# Set the Gemini AI API Key
+genai.configure(api_key=GEMINI_API_KEY)
+
 @client.event
 async def on_ready():
+    # Global variables set at startup and can be changed via commands
+    global MAX_DEGREE_TIER
+    global USE_RANDOM_SORT
+    global USE_AI_MATCHMAKE
+    MAX_DEGREE_TIER = 2 #This number is used to determine how far apart in tiers players in opposing lanes can be during matchmaking
+    USE_RANDOM_SORT = True #This determines whether the player list is shuffled or sorted by tier 
+    USE_AI_MATCHMAKE = True #This determines whether team formation is done using AI or the Python methods
+
     check_database()
     await tree.sync(guild=discord.Object(GUILD))
     print(f'Logged in as {client.user}')
@@ -715,7 +726,7 @@ def update_riotid(interaction: discord.Interaction, id):
         cur.close()
         dbconn.close()     
 
-# Method to assign roles to players based on their preferred priority
+#Method to assign roles to players based on their preferred priority
 def assign_roles(players):
     roles = ['top', 'jungle', 'mid', 'bot', 'support']
     priority_mapping = {1: [], 2: [], 3: [], 4: [], 5: []}
@@ -735,7 +746,7 @@ def assign_roles(players):
     
     return role_assignments
 
-# Method to create teams by sorting players by tier and then assigning roles
+#Method to create teams by sorting players by tier and then assigning roles
 def create_teams(players):
     players.sort(key=lambda x: x.tier)
     team_size = len(players) // 2
@@ -764,17 +775,17 @@ def create_teams(players):
 
     return red_team, blue_team
 
-# Method that validates players are within 1 tier of each other and returns true or false
+#Method that validates players are within 1 tier of each other and returns true or false
 def validate_team_matchup(red_team, blue_team, degree):
     roles = ['top_laner', 'jungle', 'mid_laner', 'bot_laner', 'support']
     for role in roles:
         red_player = getattr(red_team, role)
         blue_player = getattr(blue_team, role)
-        if abs(red_player.tier - blue_player.tier) > degree:
+        if abs(red_player.tier - blue_player.tier) >= degree:
             return False
     return True
 
-# Method to create and return a balanced team
+#Method to create and return a balanced team
 def find_balanced_teams(players, degree):
     possible_combinations = itertools.combinations(players, len(players) // 2)
     for combination in possible_combinations:
@@ -805,28 +816,119 @@ def find_balanced_teams(players, degree):
 
     return None, None
 
-# This is the primary team formation method
+#Method to create balanced teams using the MAX_DEGREE_TIER and USE_AI_MATCHMAKE to manipulate the results
 def balance_teams(players):
-    # Attempt to create two teams with a degree of tier difference of 1
-    red_team, blue_team = find_balanced_teams(players, 1)
+    # If the USE_AI_MATCHMAKE is set to true the code will use Gemini to form the teams
+    if USE_AI_MATCHMAKE:
+        red_team, blue_team = gemini_ai_find_teams(players)
+        
+        if red_team is None or blue_team is None:
+            return None, None
     
-    # Set # of attempts to 1
-    attempts = 1
+    # Otherwise teams will be created using the python methods
+    else:
+        # Attempt to create two teams with a degree of tier difference of 1
+        red_team, blue_team = find_balanced_teams(players, 1)
+        
+        # Set # of attempts to 1
+        attempts = 1
 
-    # Begin a loop to run while either team is still not formed
-    while red_team is None or blue_team is None:
-        # Each iteration of the loop will try again, every 10 iterations will add one more degree of separation between opposing lanes
-        red_team, blue_team = find_balanced_teams(players, attempts//10+1)
+        # Begin a loop to run while either team is still not formed
+        while red_team is None or blue_team is None:
+            # Each iteration of the loop will try again, every 10 iterations will add one more degree of separation between opposing lanes
+            red_team, blue_team = find_balanced_teams(players, attempts//10+1)
 
-        # Increment the attempts counter
-        attempts += 1
+            # Check to see if the number of attempts has met or exceeded the max degree setting and exit if true
+            if attempts >= MAX_DEGREE_TIER * 10:
+                return None, None    
 
-        # Check to see if the number of attempts has met or exceeded the max degree setting and exit if true
-        if attempts >= MAX_DEGREE_TIER * 10:
-            return None, None    
+            # Increment the attempts counter
+            attempts += 1
 
     # If both teams were formed this method ends with returning both teams
     return blue_team, red_team
+
+#Method to return balanced teams from Gemini AI
+def gemini_ai_find_teams(players):
+    try:
+        # This will be used to create a JSON to send to the AI prompt
+        playerdata = 'Index,Tier,Player,top_priority,jungle_priority,mid_priority,bot_priority,support_priority\n'
+        
+        # Iterate through the player list and add each player to the data string
+        for idx, p in enumerate(players):
+            playerdata += f"{idx},{p.tier},{p.username},{p.top_priority},{p.jungle_priority},{p.mid_priority},{p.bot_priority},{p.support_priority}\n"
+
+        # This will create the JSON format of the playerdata string for the AI prompt
+        reader = csv.DictReader(io.StringIO(playerdata))
+        json_data = json.dumps(list(reader))
+
+        # This var was used to try to enforce the AI to consider "tier" or "priority" as being more important but seemed to make little difference
+        #weight = "tier"
+        # This was the text included in the AI Prompt:
+        #  Consider {weight} as the most important factor when assigning positions.
+
+        # This is the AI prompt, including parameters and the JSON of player data, it will return a JSON output for the teams
+        query = f'''
+        Using the table below, create a league of legends blue and red team.  
+        Lane priority uses 1 = most preferred, 2 = high preference, 3 = medium preference, 4 = low preference, and 5 = never assign. 
+        Assume if the same values are used for multiple positions they are the same priority.
+        Red and blue positions' players should be within 0 to {MAX_DEGREE_TIER} tier difference of each other.
+        Return the result in JSON format.
+
+        Return the result in the following JSON format:
+        {{
+        "blue_team": {{
+            "top_laner": {{"index": 1, "username": "example", "tier": 3, "discordid": "12345", "priorities": "12345"}},
+            "jungle": {{"index": 1, "username": "example", "tier": 4, "discordid": "12345", "priorities": "12345"}},
+            "mid_laner": {{"index": 1, "username": "example", "tier": 2, "discordid": "12345", "priorities": "12345"}},
+            "bot_laner": {{"index": 1, "username": "example", "tier": 1, "discordid": "12345", "priorities": "12345"}},
+            "support": {{"index": 1, "username": "example", "tier": 5, "discordid": "12345", "priorities": "12345"}}
+        }},
+        "red_team": {{
+            "top_laner": {{"index": 1, "username": "example", "tier": 3, "discordid": "12345", "priorities": "12345"}},
+            "jungle": {{"index": 1, "username": "example", "tier": 4, "discordid": "12345", "priorities": "12345"}},
+            "mid_laner": {{"index": 1, "username": "example", "tier": 2, "discordid": "12345", "priorities": "12345"}},
+            "bot_laner": {{"index": 1, "username": "example", "tier": 1, "discordid": "12345", "priorities": "12345"}},
+            "support": {{"index": 1, "username": "example", "tier": 5, "discordid": "12345", "priorities": "12345"}}
+        }}
+        }}
+
+        {json_data}
+        '''
+
+        # Create the model
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        
+        # Send the prompt and capture the output
+        response = model.generate_content(query)
+
+        # The JSON response is not clean, this will help
+        response_text = response.text.replace("`", "")
+        response_text = response_text.replace("json", "")
+
+        # After the JSON is cleaned up convert it to an array
+        data = json.loads(response_text)
+
+        # Use the index value of the player from the JSON to build each team
+        blue_team = Team(players[data['blue_team']['top_laner']['index']],
+                         players[data['blue_team']['jungle']['index']],
+                         players[data['blue_team']['mid_laner']['index']],
+                         players[data['blue_team']['bot_laner']['index']],
+                         players[data['blue_team']['support']['index']])
+
+        red_team = Team(players[data['red_team']['top_laner']['index']],
+                         players[data['red_team']['jungle']['index']],
+                         players[data['red_team']['mid_laner']['index']],
+                         players[data['red_team']['bot_laner']['index']],
+                         players[data['red_team']['support']['index']])
+
+        # Return the completed teams
+        return blue_team, red_team
+    
+    # If anything goes wrong then return None
+    except Exception as e:
+        print(f"Error occurred in AI generation: {e}")
+        return None, None
 
 #Method to take users in the player role and pull their preferences to pass to the create_teams method
 def create_playerlist(player_users):
