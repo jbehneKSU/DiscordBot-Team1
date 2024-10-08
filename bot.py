@@ -43,11 +43,15 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY') #Gets the API key for Google Gemini
 
 
 # Create credentials object for Google sheets
-creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+credentials = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+
+# Build the service object for Google sheets
+service = build('sheets', 'v4', credentials=credentials)
 
 # Set the Gemini AI API Key
 genai.configure(api_key=GEMINI_API_KEY)
 
+# on_ready event for script startup
 @client.event
 async def on_ready():
     # Global variables set at startup and can be changed via commands
@@ -56,7 +60,7 @@ async def on_ready():
     global USE_AI_MATCHMAKE
     MAX_DEGREE_TIER = 2 #This number is used to determine how far apart in tiers players in opposing lanes can be during matchmaking
     USE_RANDOM_SORT = True #This determines whether the player list is shuffled or sorted by tier 
-    USE_AI_MATCHMAKE = True #This determines whether team formation is done using AI or the Python methods
+    USE_AI_MATCHMAKE = False #This determines whether team formation is done using AI or the Python methods
 
     check_database()
     await tree.sync(guild=discord.Object(GUILD))
@@ -586,7 +590,7 @@ def check_database():
                 , COUNT(teamName) AS Participation
                 , SUM(CASE WHEN teamName = gameWinner THEN 1 ELSE 0 END) Wins
                 , SUM(CASE WHEN MVP = 1 THEN 1 ELSE 0 END) MVPs
-                , SUM(CASE WHEN teamName != 'Participation' THEN 1 ELSE 0 END) GamesPlayed
+                , SUM(CASE WHEN teamName != 'PARTICIPATION' THEN 1 ELSE 0 END) GamesPlayed
             FROM Player p
             INNER JOIN GameDetail gd ON gd.discordID = p.discordID
             INNER JOIN Games g ON g.gameID = gd.gameID
@@ -594,7 +598,7 @@ def check_database():
 
             SELECT t.discordID, p.discordName, riotID, Participation, Wins, MVPs, toxicity, GamesPlayed
                 , CASE WHEN Wins = 0 OR GamesPlayed = 0 THEN 0 ELSE CAST(Wins AS float) / CAST(GamesPlayed AS float) END WinRatio
-                , (Participation + Wins + MVPs - Toxicity + GamesPlayed) TotalPoints
+                , (Participation + Wins + MVPs - Toxicity) TotalPoints
             FROM totals t
             INNER JOIN Player p ON p.discordID = t.discordID""")        
 
@@ -781,7 +785,7 @@ def validate_team_matchup(red_team, blue_team, degree):
     for role in roles:
         red_player = getattr(red_team, role)
         blue_player = getattr(blue_team, role)
-        if abs(red_player.tier - blue_player.tier) >= degree:
+        if abs(red_player.tier - blue_player.tier) > degree:
             return False
     return True
 
@@ -838,12 +842,12 @@ def balance_teams(players):
             # Each iteration of the loop will try again, every 10 iterations will add one more degree of separation between opposing lanes
             red_team, blue_team = find_balanced_teams(players, attempts//10+1)
 
-            # Check to see if the number of attempts has met or exceeded the max degree setting and exit if true
-            if attempts >= MAX_DEGREE_TIER * 10:
-                return None, None    
-
             # Increment the attempts counter
             attempts += 1
+
+            # Check to see if the number of attempts has met or exceeded the max degree setting and exit if true
+            if attempts >= MAX_DEGREE_TIER * 10 and (red_team is None or blue_team is None):
+                return None, None    
 
     # If both teams were formed this method ends with returning both teams
     return blue_team, red_team
@@ -851,7 +855,7 @@ def balance_teams(players):
 #Method to return balanced teams from Gemini AI
 def gemini_ai_find_teams(players):
     try:
-        # This will be used to create a JSON to send to the AI prompt
+        # This will be used to create a JSON to send to the AI prompt - index is added to make matching the output back to the player easy
         playerdata = 'Index,Tier,Player,top_priority,jungle_priority,mid_priority,bot_priority,support_priority\n'
         
         # Iterate through the player list and add each player to the data string
@@ -933,21 +937,29 @@ def gemini_ai_find_teams(players):
 #Method to take users in the player role and pull their preferences to pass to the create_teams method
 def create_playerlist(player_users):
     try:
+        # Create an empty array
         player_list = []
+
+        # Create the database connection
         dbconn = sqlite3.connect("bot.db")
         cur = dbconn.cursor()
 
+        # This creates a string for the query to take x args based on player size to create the WHERE for player lookup
         placeholders = ', '.join('?' for _ in player_users)
+        
+        # This query will get the info from the database for all players
         query = f"""
             SELECT *
             FROM vw_Player WHERE discordID IN ({placeholders})
             ORDER BY Tier"""
 
+        # Execute the query, iterate the results, and append the data to the array
         cur.execute(query, player_users)
         data = cur.fetchall()
         for row in data:
             player_list.append(Player(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7]))
 
+        # Return the player list
         return player_list
     
     except sqlite3.Error as e:
@@ -961,9 +973,11 @@ def create_playerlist(player_users):
 #Method to update a game with the winner
 def update_win(lobby, winner):
     try:
+        # Create the database connection
         dbconn = sqlite3.connect("bot.db")
         cur = dbconn.cursor()
 
+        # This query will set the game winner and isComplete for the passed lobby
         query = f"UPDATE Games SET isComplete = 1, gameWinner = ? WHERE isComplete = 0 AND gameLobby = ?"
         cur.execute(query, [winner.upper(), lobby])
         dbconn.commit()
@@ -989,14 +1003,24 @@ def update_win(lobby, winner):
     description = 'Update your Riot ID <Game Name><#Tagline>',
     guild = discord.Object(GUILD))
 async def riotid(interaction, id: str):
+    # Make sure the player has been registered in the database
     register_player(interaction)
+
+    # Update the Riot ID and capture the return of true or the error message to determine if it worked
     status = update_riotid(interaction, id)
+
+    # Call the update rank method to set the player's rank from the Riot API, capture the true/false if it worked and the player's rank for output
     rankupdate, newrank = update_riot_rank(interaction)
+    
+    # If the Riot ID was successful then check the rank update next
     if (status == True):
+        # If the rank update was successful, output success for both and indicate the values
         if rankupdate:
             await interaction.response.send_message(f'Your Riot ID has been updated to {id} and your Rank has been updated to {newrank}.', ephemeral=True)
+        # If the ID was updated but not the rank
         else:
             await interaction.response.send_message(f'Your Riot ID has been updated to {id} but your Rank could not be found, please check the name.', ephemeral=True)
+    # If the ID was not updated display the error
     else:
         await interaction.response.send_message(f'{status}', ephemeral=True)
 
@@ -1040,6 +1064,7 @@ async def volunteer(interaction):
     view = volunteerButtons()
     await interaction.response.send_message('The Volunteer check has started! You have 15 minutes to volunteer if you wish to sit out', view = view)
 
+# Command to add a point of toxicity to a player
 @tree.command(
         name = 'toxicity',
         description = 'Give a user a point of toxicity.',
@@ -1205,6 +1230,10 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
         # Now create a list of lists of 10 players, this is how lobbies are created (10 = 1 lobby, 20 = 2 lobbies, 30 = 3 lobbies)
         player_list = np.array_split(initial_list, int(len(initial_list)/10))
 
+        # AI response takes more than 3 seconds generally so responses must be handled with a defer
+        if USE_AI_MATCHMAKE:
+            await interaction.response.defer()
+
         # Loop through the list of list of Players to create 2 teams (blue/red) of 5 for each list.  
         # Len() uses +1 so that idx corresponds with the Lobby # (1,2,3)
         for idx in range(1, int(len(player_users)/10)+1):
@@ -1214,7 +1243,12 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
 
             if blueteam is None or redteam is None:
                 reset_db_match(match_number)
-                await interaction.response.send_message(f'Team could not be formed for Lobby #{idx}, please adjust role preference or tier scores and try again', ephemeral = True)
+                
+                # Response type will depend on whether AI is used - with defer this will not be ephmeral
+                if USE_AI_MATCHMAKE:
+                    await interaction.followup.send(f'Team could not be formed for Lobby #{idx}, please adjust role preference or tier scores and try again')
+                else:
+                    await interaction.response.send_message(f'Team could not be formed for Lobby #{idx}, please adjust role preference or tier scores and try again', ephemeral = True)
                 print("Matchmake command failed to form a team.")
                 return
 
@@ -1252,7 +1286,7 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
                 # Loop the volunteer id list
                 for vol in volunteer_ids:
                     # Query to insert the game ID and Discord ID to GameDetail for this game
-                    query = '''INSERT INTO GameDetail (gameID, discordID, teamName, gamePosition, MVP) VALUES (?, ?, 'Participation', 'N/A', 0)'''
+                    query = '''INSERT INTO GameDetail (gameID, discordID, teamName, gamePosition, MVP) VALUES (?, ?, 'PARTICIPATION', 'N/A', 0)'''
                     cur.execute(query, [gameID, vol])                
                     dbconn.commit()                
 
@@ -1302,16 +1336,16 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
 
             # After the lobby embed is created, this query will insert the players into the GameDetail table
             query = '''INSERT INTO GameDetail (gameID, discordID, teamName, gamePosition, MVP) VALUES (?, ?, ?, ?, 0)'''
-            cur.execute(query, [gameID, redteam.top_laner.discord_id, "Red", "TOP"])
-            cur.execute(query, [gameID, redteam.jungle.discord_id, "Red", "JUN"])
-            cur.execute(query, [gameID, redteam.mid_laner.discord_id, "Red", "MID"])
-            cur.execute(query, [gameID, redteam.bot_laner.discord_id, "Red", "ADC"])
-            cur.execute(query, [gameID, redteam.support.discord_id, "Red", "SUP"])
-            cur.execute(query, [gameID, blueteam.top_laner.discord_id, "Blue", "TOP"])
-            cur.execute(query, [gameID, blueteam.jungle.discord_id, "Blue", "JUN"])
-            cur.execute(query, [gameID, blueteam.mid_laner.discord_id, "Blue", "MID"])
-            cur.execute(query, [gameID, blueteam.bot_laner.discord_id, "Blue", "ADC"])
-            cur.execute(query, [gameID, blueteam.support.discord_id, "Blue", "SUP"])                
+            cur.execute(query, [gameID, redteam.top_laner.discord_id, "RED", "TOP"])
+            cur.execute(query, [gameID, redteam.jungle.discord_id, "RED", "JUN"])
+            cur.execute(query, [gameID, redteam.mid_laner.discord_id, "RED", "MID"])
+            cur.execute(query, [gameID, redteam.bot_laner.discord_id, "RED", "ADC"])
+            cur.execute(query, [gameID, redteam.support.discord_id, "RED", "SUP"])
+            cur.execute(query, [gameID, blueteam.top_laner.discord_id, "BLUE", "TOP"])
+            cur.execute(query, [gameID, blueteam.jungle.discord_id, "BLUE", "JUN"])
+            cur.execute(query, [gameID, blueteam.mid_laner.discord_id, "BLUE", "MID"])
+            cur.execute(query, [gameID, blueteam.bot_laner.discord_id, "BLUE", "ADC"])
+            cur.execute(query, [gameID, blueteam.support.discord_id, "BLUE", "SUP"])                
             dbconn.commit()
 
         #Embed to display all users who volunteered to sit out.
@@ -1324,17 +1358,36 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
         # This block determines which Lobbies exist and displays the correct embeds.
         # This could likely be done better, but currently works and is not causing performance issues
         if embedLobby2 == None:
-            await interaction.response.send_message( embeds = [embedVol, embedLobby1])
+            if USE_AI_MATCHMAKE:
+                await interaction.followup.send( embeds = [embedVol, embedLobby1])
+            else:
+                await interaction.response.send_message( embeds = [embedVol, embedLobby1])
+
         elif embedLobby2 == None and not volunteer_users:
-            await interaction.response.send_message( embeds = embedLobby1)
+            if USE_AI_MATCHMAKE:
+                await interaction.followup.send( embeds = embedLobby1)
+            else:
+                await interaction.response.send_message( embeds = embedLobby1)
         elif embedLobby3 == None:
-            await interaction.response.send_message( embeds = [embedVol, embedLobby1, embedLobby2])
+            if USE_AI_MATCHMAKE:
+                await interaction.followup.send( embeds = [embedVol, embedLobby1, embedLobby2])
+            else:
+                await interaction.response.send_message( embeds = [embedVol, embedLobby1, embedLobby2])
         elif embedLobby3 == None and not volunteer_users:
-            await interaction.response.send_message( embeds = [embedLobby1, embedLobby2])
+            if USE_AI_MATCHMAKE:
+                await interaction.followup.send( embeds = [embedLobby1, embedLobby2])
+            else:
+                await interaction.response.send_message( embeds = [embedLobby1, embedLobby2])
         elif volunteer_users == None:
-            await interaction.response.send_message( embeds = [embedLobby1, embedLobby2, embedLobby3])
+            if USE_AI_MATCHMAKE:
+                await interaction.followup.send( embeds = [embedLobby1, embedLobby2, embedLobby3])
+            else:
+                await interaction.response.send_message( embeds = [embedLobby1, embedLobby2, embedLobby3])
         else:
-            await interaction.response.send_message( embeds = [embedVol, embedLobby1, embedLobby2, embedLobby3])
+            if USE_AI_MATCHMAKE:
+                await interaction.followup.send( embeds = [embedVol, embedLobby1, embedLobby2, embedLobby3])
+            else:
+                await interaction.response.send_message( embeds = [embedVol, embedLobby1, embedLobby2, embedLobby3])
 
     except Exception as e:
         print(f'An error occured: {e}')
