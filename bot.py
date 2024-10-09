@@ -8,6 +8,7 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 import google.generativeai as genai
 import csv, io, json
+from datetime import datetime
 # from discord.ext import commands
 import sqlite3
 import random
@@ -276,6 +277,38 @@ class volunteerButtons(discord.ui.View):
         await interaction.response.edit_message(view = self)
         await interaction.followup.send('You have not volunteered to sit out, please volunteer to sit out first.', ephemeral = True)
         return "Did not check in yet"
+
+#Checkin button class for checking in to tournaments.
+class ExportButtons(discord.ui.View):
+    def __init__(self):
+        super().__init__()
+
+    @discord.ui.button(
+            label = "Export Players",
+            style = discord.ButtonStyle.green)
+    async def export_players(self, interaction: discord.Interaction, button: discord.ui.Button):
+        today = datetime.now()
+        sheets_export_players("Players_" + str(today.strftime('%m%d%Y')))
+        await interaction.response.edit_message(view = self)
+        await interaction.followup.send('Player data exported.', ephemeral=True)
+
+    @discord.ui.button(
+            label = "Export Points",
+            style = discord.ButtonStyle.green)
+    async def export_points(self, interaction: discord.Interaction, button: discord.ui.Button):
+        today = datetime.now()
+        sheets_export_points("Points" + str(today.strftime('%m%d%Y')))
+        await interaction.response.edit_message(view = self)
+        await interaction.followup.send('Points data exported.', ephemeral=True)   
+        
+    @discord.ui.button(
+            label = "Export Games",
+            style = discord.ButtonStyle.green)
+    async def export_games(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        sheets_export_games()
+        await interaction.followup.send('Game data exported.', ephemeral=True)
+
 
 #endregion CLASSES
 
@@ -991,6 +1024,355 @@ def update_win(lobby, winner):
         cur.close()
         dbconn.close() 
 
+#Method to check if a sheet exists, returns True/False
+def sheet_exists(sheet_name):
+    # Get spreadsheet metadata
+    spreadsheet = service.spreadsheets().get(spreadsheetId=SHEETS_ID).execute()
+    sheets = spreadsheet.get('sheets', [])
+
+    # Check if the sheet name exists
+    for sheet in sheets:
+        if sheet['properties']['title'] == sheet_name:
+            return True
+    return False
+
+#Method to create a sheet with the name passed in and a bool to clear the sheet if it already exists
+def sheets_create(sheet_name, clear):
+    # Check if the sheet name already exists, if not then create it
+    if not sheet_exists(sheet_name):
+        # Request body to add a new sheet
+        request_body = {'requests': [{'addSheet': {'properties': {'title': sheet_name}}}]}
+
+        # Call the API to add a new sheet
+        response = service.spreadsheets().batchUpdate(spreadsheetId=SHEETS_ID,body=request_body).execute()
+
+        # Get the new sheet's ID from the response and return this
+        return response['replies'][0]['addSheet']['properties']['sheetId']
+    
+    # If the sheet name already exists check if the clear parm is True to delete the data
+    elif clear:
+        # Range to clear (for entire sheet, use "SheetName")
+        range_to_clear = f'{sheet_name}'
+
+        # Clear the data
+        request_body = {}
+        service.spreadsheets().values().clear(spreadsheetId=SHEETS_ID,range=range_to_clear,body=request_body).execute()
+
+    # Get the sheet ID from the sheet name by looping through each sheet until it matches
+    spreadsheet = service.spreadsheets().get(spreadsheetId=SHEETS_ID).execute()
+    sheets = spreadsheet.get('sheets', [])
+    for sheet in sheets:
+        if sheet['properties']['title'] == sheet_name:
+            return sheet['properties']['sheetId']
+
+#Method to export the points data from the database to the sheet      
+def sheets_export_points(sheet_name):
+    # First check if the sheet exists yet, if yes clear it out
+    sheets_create(sheet_name, True)
+    
+    try:
+        # Create the database connection
+        dbconn = sqlite3.connect("bot.db")
+        cur = dbconn.cursor()
+
+        # Query to get the points and player info
+        query = "SELECT * FROM vw_Points"
+        cur.execute(query)
+
+        # Get the column names (headers)
+        headers = [description[0] for description in cur.description]
+
+        # Execute the query and capture the results
+        rows = cur.fetchall()
+
+        # Convert fetched data to a list of lists suitable for Google Sheets
+        data = [list(map(str, row)) for row in rows]
+
+        # Add headers if needed (optional)
+        data.insert(0, headers)
+
+        # Calculate the range based on data size
+        start_cell = 'A1'
+        end_cell = f'{chr(ord("A") + len(data[0]) - 1)}{len(data)}'
+        range_name = f'{sheet_name}!{start_cell}:{end_cell}'
+
+        # Request body for updating values
+        body = {'values': data}
+
+        # Write data to the sheet using the update method
+        result = service.spreadsheets().values().update(spreadsheetId=SHEETS_ID,range=range_name,valueInputOption='RAW',body=body).execute()  
+
+    except sqlite3.Error as e:
+        print (f'Database error occurred: {e}')
+
+    finally:
+        cur.close()
+        dbconn.close() 
+
+#Method to export the player information from the database to the sheet
+def sheets_export_players(sheet_name):
+    # First check if the sheet exists yet, if yes clear it out
+    sheets_create(sheet_name, True)
+
+    try:
+        # Create the database connection
+        dbconn = sqlite3.connect("bot.db")
+        cur = dbconn.cursor()
+
+        # Query to get the information from the player table
+        query = """SELECT Tier, lolRank, tieroverride, discordName, p.riotID, top_priority, jungle_priority, 
+                mid_priority, bot_priority, support_priority 
+                FROM vw_Player
+                INNER JOIN Player p ON p.discordID = vw_Player.discordID"""
+        cur.execute(query)
+
+        # Get the column names (headers)
+        headers = [description[0] for description in cur.description]
+
+        # Execute the query and capture the results
+        rows = cur.fetchall()
+
+        # Convert fetched data to a list of lists suitable for Google Sheets
+        data = [list(map(str, row)) for row in rows]
+
+        # Add headers if needed (optional)
+        data.insert(0, headers)
+
+        # Calculate the range based on data size
+        start_cell = 'A1'
+        end_cell = f'{chr(ord("A") + len(data[0]) - 1)}{len(data)}'
+        range_name = f'{sheet_name}!{start_cell}:{end_cell}'
+
+        # Request body for updating values
+        body = {'values': data}
+
+        # Write data to the sheet using the update method
+        result = service.spreadsheets().values().update(spreadsheetId=SHEETS_ID,range=range_name,valueInputOption='RAW',body=body).execute()  
+
+    except sqlite3.Error as e:
+        print (f'Database error occurred: {e}')
+
+    finally:
+        cur.close()
+        dbconn.close() 
+
+#Method to write a list of cell data to the given sheetId, used for bulk writes
+def sheets_write_cells(sheetId, cell_data):
+    # Prepare the data to be written
+    requests = []
+    
+    # Iterate through each cell in the list and build the request
+    for cell in cell_data:
+        requests.append({
+            'updateCells': {
+                'range': {
+                    'sheetId': sheetId,  
+                    'startRowIndex': cell[0]['row'],
+                    'endRowIndex': cell[0]['row'] + 1,
+                    'startColumnIndex': cell[0]['col'],
+                    'endColumnIndex': cell[0]['col'] + 1
+                },
+                'rows': [{
+                    'values': [{
+                        'userEnteredValue': {
+                            'stringValue': cell[0]['value']
+                        },
+                        'userEnteredFormat': {
+                            'backgroundColor': {
+                                'red': cell[0]['color'].get('red', 0),
+                                'green': cell[0]['color'].get('green', 0),
+                                'blue': cell[0]['color'].get('blue', 0),
+                            }
+                        }
+                    }]
+                }],
+                'fields': 'userEnteredValue,userEnteredFormat.backgroundColor'
+            }
+        })
+
+    # Send the batchUpdate request
+    body = {'requests': requests}
+    service.spreadsheets().batchUpdate(spreadsheetId=SHEETS_ID,body=body).execute()
+
+#Method to export all of the game details to sheets by month
+def sheets_export_games():
+    try:
+        # Create the database connection
+        dbconn = sqlite3.connect("bot.db")
+        cur = dbconn.cursor()
+
+        # Query to get the month and name from the Games table
+        query = """SELECT DISTINCT strftime('%m', gameDate), 
+                CASE strftime('%m', gameDate) 
+                WHEN '01' THEN 'Jan_' || strftime('%Y', gameDate)
+                WHEN '02' THEN 'Feb_' || strftime('%Y', gameDate)
+                WHEN '03' THEN 'Mar_' || strftime('%Y', gameDate)
+                WHEN '04' THEN 'Apr_' || strftime('%Y', gameDate)
+                WHEN '05' THEN 'May_' || strftime('%Y', gameDate)
+                WHEN '06' THEN 'Jun_' || strftime('%Y', gameDate)
+                WHEN '07' THEN 'Jul_' || strftime('%Y', gameDate)
+                WHEN '08' THEN 'Aug_' || strftime('%Y', gameDate)
+                WHEN '09' THEN 'Sep_' || strftime('%Y', gameDate)
+                WHEN '10' THEN 'Oct_' || strftime('%Y', gameDate)
+                WHEN '11' THEN 'Nov_' || strftime('%Y', gameDate)
+                WHEN '12' THEN 'Dec_' || strftime('%Y', gameDate)
+                END
+                FROM Games;"""
+        cur.execute(query)
+        months = cur.fetchall()
+
+        # Loop #1 - iterate each month in Games
+        for month in months:
+            # Create an empty list for the cell data to write to the sheet
+            celldata = []
+
+            # Call the method to create a new sheet based on the month name with the clear flag if it exists + capture the sheet id output
+            new_sheet_id = sheets_create(month[1], True)
+
+            # Use the current month to query the dates games were played
+            query = "SELECT DISTINCT gameDate FROM Games WHERE strftime('%m', gameDate) = ?;"
+            cur.execute(query, [month[0],])
+            days = cur.fetchall()
+
+            # Loop #2 - iterate each day in the month of Games
+            for day_idx, day in enumerate(days):
+                # Set the starting position for the column the date is written, B1 = cell position 0, 1 - there are 7 cells between each date calculated by the index
+                daycol = 1 + (day_idx * 7)
+
+                # Add the date value to the cell data using a light green background (float of 0.0 to 1.0 created by dividing RGB by 255)
+                celldata.append([{'row': 0, 'col': daycol, 'value': day[0], 'color': {'red': 82/255, 'green': 216/255, 'blue': 109/255}}])
+            
+                # Query to get the gameNumbers for the current day in the lop
+                query = "SELECT DISTINCT gameNumber FROM Games WHERE gameDate = ?;"
+                cur.execute(query, [day[0],])
+                games = cur.fetchall()
+
+                # Loop #3 - iterate each game number in the current day loop
+                for game_idx, game in enumerate(games):
+                    # The row of the game starts on 2 and has 9 spaces between each game in a day, calculated by the index * 9
+                    gamerow = 2 + (game_idx * 9)
+
+                    # The column of the game starts at 0 with 7 spaces between days, calculated by the index * 7
+                    gamecol = 0 + (day_idx * 7)
+
+                    # Append the cell with the game number to the list
+                    celldata.append([{'row': gamerow, 'col': gamecol + 1, 'value': "Game " + str(game[0]), 'color': {'red': 1, 'green': 1, 'blue': 1}}])
+                    
+                    # Append the position name cells to the list with a green background
+                    celldata.append([{'row': gamerow + 3, 'col': gamecol, 'value': "Top", 'color': {'red': 193/255, 'green': 192/255, 'blue': 192/255}}])
+                    celldata.append([{'row': gamerow + 4, 'col': gamecol, 'value': "Jng", 'color': {'red': 193/255, 'green': 192/255, 'blue': 192/255}}])
+                    celldata.append([{'row': gamerow + 5, 'col': gamecol, 'value': "Mid", 'color': {'red': 193/255, 'green': 192/255, 'blue': 192/255}}])
+                    celldata.append([{'row': gamerow + 6, 'col': gamecol, 'value': "ADC", 'color': {'red': 193/255, 'green': 192/255, 'blue': 192/255}}])
+                    celldata.append([{'row': gamerow + 7, 'col': gamecol, 'value': "Sup", 'color': {'red': 193/255, 'green': 192/255, 'blue': 192/255}}])
+
+                    # Query the lobbies and the winner for the current game number
+                    query = "SELECT gameLobby, gameWinner FROM Games WHERE gameDate = ? and gameNumber = ?;"
+                    cur.execute(query, [day[0], game[0]])
+                    lobbies = cur.fetchall()
+
+                    # Loop #4 - iterate each lobby in the current game
+                    for lobby_idx, lobby in enumerate(lobbies):
+                        # The lobby column starts at 1 with 2 spaces between, calculated by the index * 2.
+                        # Additionally the current game column is added for each day in the loop
+                        lobbycol = 1 + (lobby_idx * 2) + (gamecol)
+
+                        # Append the lobby number to the cell list
+                        celldata.append([{'row': gamerow + 1, 'col': lobbycol, 'value': "Lobby " + str(lobby[0]), 'color': {'red': 1, 'green': 1, 'blue': 1}}])
+                        
+                        # Index 1 of lobby is the winner of the game, if it is blue this will fill the background of the blue team as the winner
+                        if lobby[1] == "BLUE":
+                            # Append the team names and background color for blue as the winner
+                            celldata.append([{'row': gamerow + 2, 'col': lobbycol, 'value': "BLUE", 'color': {'red': 11/255, 'green': 178/255, 'blue': 0}}])
+                            celldata.append([{'row': gamerow + 2, 'col': lobbycol + 1, 'value': "RED", 'color': {'red': 1, 'green': 1, 'blue': 1}}])
+                        
+                        # If blue was not the winner we assume red was and add the background color
+                        else:
+                            # Append the team names and background color for red as the winner
+                            celldata.append([{'row': gamerow + 2, 'col': lobbycol, 'value': "BLUE", 'color': {'red': 1, 'green': 1, 'blue': 1}}])
+                            celldata.append([{'row': gamerow + 2, 'col': lobbycol + 1, 'value': "RED", 'color': {'red': 11/255, 'green': 178/255, 'blue': 0}}])
+                        
+                        # Query the players for the team in the current lobby
+                        # NOTE HERE - the assumption is the teams always return in order of Top, Jng, Mid, ADC, and Sup
+                        query = """SELECT teamName, riotID, COALESCE(MVP, 0), gamePosition
+                                FROM Games g
+                                INNER JOIN GameDetail gd on gd.gameID = g.gameID
+                                INNER JOIN Player p ON p.discordID = gd.discordID
+                                WHERE gameDate = ? and gameNumber = ? and gameLobby = ?
+                                AND teamName <> 'PARTICIPATION';"""
+                        cur.execute(query, [day[0], game[0], lobby[0]])
+                        teams = cur.fetchall()
+
+                        # Set the starting row for red/blue, which is 3 spaces down from where the game row starts
+                        bluerow = gamerow + 3
+                        redrow = gamerow + 3
+
+                        # Loop #5 - iterate through the players
+                        for team_idx, team in enumerate(teams):
+                            # First check is if this is the blue team AND the player was MVP
+                            if team[0] == "BLUE" and team[2] == 1:
+                                # Append the player with a gold background as the MVP to the cell data and increment the blue row to the next position
+                                celldata.append([{'row': bluerow, 'col': lobbycol, 'value': team[1], 'color': {'red': 196/255, 'green': 214/255, 'blue': 0}}])
+                                bluerow += 1
+                            
+                            # Next check if this is just a blue team player
+                            elif team[0] == "BLUE":
+                                # Append the player to the cell data and increment the blue row to the next position
+                                celldata.append([{'row': bluerow, 'col': lobbycol, 'value': team[1], 'color': {'red': 1, 'green': 1, 'blue': 1}}])
+                                bluerow += 1
+                            
+                            # Next check if this is red team AND MVP
+                            elif team[0] == "RED" and team[2] == 1:
+                                # Append the player with a gold background as the MVP to the cell data and increment the red row to the next position
+                                celldata.append([{'row': redrow, 'col': lobbycol + 1, 'value': team[1], 'color': {'red': 196/255, 'green': 214/255, 'blue': 0}}])
+                                redrow += 1
+
+                            # Finally check if this is red team
+                            elif team[0] == "RED":
+                                # Append the player to the cell data and increment the blue row to the next position
+                                celldata.append([{'row': redrow, 'col': lobbycol + 1, 'value': team[1], 'color': {'red': 1, 'green': 1, 'blue': 1}}])
+                                redrow += 1                                
+
+                    # Back out to loop #3 (game number) again - query to get the participation players
+                    query = """SELECT riotID
+                            FROM Games g
+                            INNER JOIN GameDetail gd on gd.gameID = g.gameID
+                            INNER JOIN Player p ON p.discordID = gd.discordID
+                            WHERE gameDate = ? and gameNumber = ?
+                            AND teamName = 'PARTICIPATION';"""
+                    cur.execute(query, [day[0], game[0]])
+                    participations = cur.fetchall()      
+
+                    # The participation column starts 2 columns from the last lobby and 2 rows below the game number
+                    partcol = lobbycol + 2
+                    partrow = gamerow + 2
+
+                    # Add the participation header and increment the row
+                    celldata.append([{'row': partrow, 'col': partcol, 'value': "PARTICIPATION", 'color': {'red': 1, 'green': 1, 'blue': 1}}])
+                    partrow += 1
+
+                    # Iterate the participation players 
+                    for part_idx, participation in enumerate(participations):
+                        # There is only room for 5 players without running into a new game below, when 5 is reached increment the column and reset row
+                        if part_idx == 5:
+                            partcol += 1
+                            partrow = gamerow + 2
+
+                        # Add the player row to the cell list and increment the row
+                        celldata.append([{'row': partrow, 'col': partcol, 'value': participation[0], 'color': {'red': 1, 'green': 1, 'blue': 1}}])
+                        partrow += 1
+        
+            # Now back out to Loop #1 (Month) - call the sheets write function and pass the sheet id captured above and the cell list data
+            sheets_write_cells(new_sheet_id, celldata)
+
+    except sqlite3.Error as e:
+        print (f'Database error occurred: {e}')
+
+    finally:
+        cur.close()
+        dbconn.close()     
+
+
+
 #endregion METHODS
 
 
@@ -1485,6 +1867,16 @@ async def activegames(interaction: discord.Interaction):
     finally:
         cur.close()
         dbconn.close() 
+
+#Command to set preferences to fill (44444 is used)
+@tree.command(
+        name = 'export',
+        description= 'Export database to Google sheets.',
+        guild = discord.Object(GUILD))
+async def export(interaction):
+    view = ExportButtons()
+    await interaction.response.send_message(f'Use the buttons below to export the database to Google sheets', view = view, ephemeral=True)
+
 
 
 """
