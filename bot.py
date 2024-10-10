@@ -1415,6 +1415,17 @@ async def checkin(interaction, timeout: int=900):
     view = CheckinButtons(timeout=timeout)
     await interaction.response.send_message(f'Check-In for the tournament has started! You have {timeout//60} minutes to check-in.', view = view)
 
+#Command for security admin check in
+@commands.has_permissions(administrator=True)
+@tree.command(name="checkin", description="Admin only check-in command")
+async def checkin_command(interaction: discord.Interaction):
+    await interaction.response.send_message(f"Check-in successful, {interaction.user.name}!")
+
+@checkin_command.error
+async def checkin_command_error(interaction: discord.Interaction, error):
+    if isinstance(error, commands.MissingPermissions):
+        await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+
 #Command to set preferences to fill (44444 is used)
 @tree.command(
         name = 'fill',
