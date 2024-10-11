@@ -42,6 +42,10 @@ SERVICE_ACCOUNT_FILE = 'token.json' #Location of Google Sheets credential file
 RIOT_API_KEY = os.getenv('RIOT_API_KEY') #Gets the Riot API Key from the .env and sets it to RIOT_API_KEY
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY') #Gets the API key for Google Gemini API
 
+# Global variables set at startup and can be changed via commands
+MAX_DEGREE_TIER = 2 #This number is used to determine how far apart in tiers players in opposing lanes can be during matchmaking
+USE_RANDOM_SORT = True #This determines whether the player list is shuffled or sorted by tier 
+USE_AI_MATCHMAKE = False #This determines whether team formation is done using AI or the Python methods
 
 # Create credentials object for Google sheets
 credentials = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
@@ -57,10 +61,10 @@ genai.configure(api_key=GEMINI_API_KEY)
 async def on_ready():
     # Global variables set at startup and can be changed via commands
     global MAX_DEGREE_TIER
-    global USE_RANDOM_SORT
-    global USE_AI_MATCHMAKE
     MAX_DEGREE_TIER = 2 #This number is used to determine how far apart in tiers players in opposing lanes can be during matchmaking
+    global USE_RANDOM_SORT
     USE_RANDOM_SORT = True #This determines whether the player list is shuffled or sorted by tier 
+    global USE_AI_MATCHMAKE
     USE_AI_MATCHMAKE = False #This determines whether team formation is done using AI or the Python methods
 
     check_database()
@@ -314,6 +318,10 @@ class ExportButtons(discord.ui.View):
 
 
 #region METHODS
+
+def update_global(var, value):
+    global USE_AI_MATCHMAKE
+    USE_AI_MATCHMAKE = value
 
 #Method to cleanup database game entries if a matchmake command fails
 def reset_db_match(match: int):
@@ -1876,6 +1884,31 @@ async def activegames(interaction: discord.Interaction):
 async def export(interaction):
     view = ExportButtons()
     await interaction.response.send_message(f'Use the buttons below to export the database to Google sheets', view = view, ephemeral=True)
+
+
+def is_admin(interaction: discord.Interaction) -> bool:
+    return interaction.user.guild_permissions.administrator
+
+#Slash command to see active games
+@tree.command(
+    name = 'settings',
+    description = "test",
+    guild = discord.Object(GUILD))
+async def settings(interaction: discord.Interaction):
+    if not is_admin(interaction):
+        await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
+    
+    # Create the embed for displaying the game information, will show 0 if no games are returned
+    embedGames = discord.Embed(color = discord.Color.green(), title = 'Bot Settings')
+
+    # Loop the data returned and add a line for each active game to the embed
+    embedGames.add_field(name = 'USE_AI_MATCHMAKE', value = f"{USE_AI_MATCHMAKE}")
+    embedGames.add_field(name = 'MAX_DEGREE_TIER', value = f"{MAX_DEGREE_TIER}")
+    embedGames.add_field(name = 'USE_RANDOM_SORT', value = f"{USE_RANDOM_SORT}")
+
+    # Output the embed
+    await interaction.response.send_message(embed = embedGames, ephemeral=True)
+
 
 
 
