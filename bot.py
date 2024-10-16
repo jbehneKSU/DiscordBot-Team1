@@ -319,10 +319,6 @@ class ExportButtons(discord.ui.View):
 
 #region METHODS
 
-def update_global(var, value):
-    global USE_AI_MATCHMAKE
-    USE_AI_MATCHMAKE = value
-
 #Method to cleanup database game entries if a matchmake command fails
 def reset_db_match(match: int):
     try:
@@ -450,9 +446,9 @@ def update_riot_rank(interaction: discord.Interaction):
         # Parse the JSON response and set the rank
         account_info = response.json()
         
-        # If the player is not ranked the result will be empty so we will default to Bronze, otherwise use the returned rank
+        # If the player is not ranked the result will be empty so we will default to UNRANKED, otherwise use the returned rank
         if len(account_info) == 0:
-            rank = "BRONZE"
+            rank = "UNRANKED"
         else:
             rank = account_info[0]['tier']
 
@@ -647,6 +643,8 @@ def check_database():
                 SELECT 
                 CASE WHEN COALESCE(tieroverride,0) = 0 OR COALESCE(tieroverride,0) = '' THEN 
                     CASE LOWER(lolRank)
+                    WHEN 'unranked' THEN 11
+                    WHEN 'iron' THEN 10
                     WHEN 'bronze' THEN 9
                     WHEN 'silver' THEN 8 
                     WHEN 'gold' THEN 7 
@@ -1379,7 +1377,9 @@ def sheets_export_games():
         cur.close()
         dbconn.close()     
 
-
+#Method to determine if the user is an admin
+def is_admin(interaction: discord.Interaction) -> bool:
+    return interaction.user.guild_permissions.administrator
 
 #endregion METHODS
 
@@ -1885,19 +1885,28 @@ async def export(interaction):
     view = ExportButtons()
     await interaction.response.send_message(f'Use the buttons below to export the database to Google sheets', view = view, ephemeral=True)
 
-
-def is_admin(interaction: discord.Interaction) -> bool:
-    return interaction.user.guild_permissions.administrator
-
-#Slash command to see active games
+#Slash command to see and change admin settings
 @tree.command(
     name = 'settings',
-    description = "test",
+    description = "Testing placeholder for viewing and changing settings",
     guild = discord.Object(GUILD))
-async def settings(interaction: discord.Interaction):
-    if not is_admin(interaction):
-        await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
+async def settings(interaction: discord.Interaction, use_ai: str = ''):
+    await interaction.response.defer(ephemeral=True)
     
+    if not is_admin(interaction):
+        await interaction.followup.send("This command is only for administrators.", ephemeral=True)
+        return
+    
+    if use_ai != '' and (use_ai.lower() == 'true' or use_ai.lower() == 'false'):
+        if use_ai.lower() == 'true':
+            global USE_AI_MATCHMAKE
+            USE_AI_MATCHMAKE = True
+        else:
+            USE_AI_MATCHMAKE = False
+
+        await interaction.followup.send(f"USE_AI_MATCHMAKE has been set to {USE_AI_MATCHMAKE}", ephemeral=True)
+        return        
+
     # Create the embed for displaying the game information, will show 0 if no games are returned
     embedGames = discord.Embed(color = discord.Color.green(), title = 'Bot Settings')
 
@@ -1907,7 +1916,7 @@ async def settings(interaction: discord.Interaction):
     embedGames.add_field(name = 'USE_RANDOM_SORT', value = f"{USE_RANDOM_SORT}")
 
     # Output the embed
-    await interaction.response.send_message(embed = embedGames, ephemeral=True)
+    await interaction.followup.send(embed = embedGames, ephemeral=True)
 
 
 
