@@ -9,21 +9,11 @@ from googleapiclient.discovery import build
 import google.generativeai as genai
 import csv, io, json
 from datetime import datetime
-# from discord.ext import commands
 import sqlite3
 import random
-# from operator import itemgetter
 import itertools
 import numpy as np
 import requests
-# import logging
-# import gspread
-# from oauth2client.service_account import ServiceAccountCredentials
-# from google.auth.transport.requests import Request
-# from google.oauth2.credentials import Credentials
-# from google_auth_oauthlib.flow import InstalledAppFlow
-# from googleapiclient.discovery import build
-# from googleapiclient.errors import HttpError
 
 load_dotenv(find_dotenv())
 intents = discord.Intents.default()
@@ -36,11 +26,26 @@ tree = app_commands.CommandTree(client)
 TOKEN = os.getenv('BOT_TOKEN') #Gets the bot's password token from the .env file and sets it to TOKEN.
 GUILD = os.getenv('GUILD_ID') #Gets the server's id from the .env file and sets it to GUILD.
 SHEETS_ID = os.getenv('GOOGLE_SHEETS_ID') #Gets the Google Sheets ID from the .env file and sets it to SHEETS_ID.
-SHEETS_NAME = os.getenv('GOOGLE_SHEETS_NAME') #Gets the google sheets name from the .env and sets it to SHEETS_NAME
+# SHEETS_NAME = os.getenv('GOOGLE_SHEETS_NAME') #Gets the google sheets name from the .env and sets it to SHEETS_NAME
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets'] #Allows the app to read and write to the google sheet.
 SERVICE_ACCOUNT_FILE = 'token.json' #Location of Google Sheets credential file
 RIOT_API_KEY = os.getenv('RIOT_API_KEY') #Gets the Riot API Key from the .env and sets it to RIOT_API_KEY
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY') #Gets the API key for Google Gemini API
+
+# The .env variables control how tier calculations are performed
+GAMESPLAYED = os.getenv('gamesplayed')
+WINRATIO = os.getenv('winratio')
+UNRANKED = os.getenv('unranked')
+IRON = os.getenv('iron')
+BRONZE = os.getenv('bronze')
+SILVER = os.getenv('silver')
+GOLD = os.getenv('gold')
+PLATINUM = os.getenv('platinum')
+EMERALD = os.getenv('emerald')
+DIAMOND = os.getenv('diamond')
+MASTER = os.getenv('master')
+GRANDMASTER = os.getenv('grandmaster')
+CHALLENGER = os.getenv('challenger')
 
 # Global variables set at startup and can be changed via commands
 MAX_DEGREE_TIER = 2 #This number is used to determine how far apart in tiers players in opposing lanes can be during matchmaking
@@ -560,7 +565,7 @@ def register_player(interaction: discord.Interaction):
         data = cur.fetchone()
 
         if data[0] == 0:
-            query = "INSERT INTO Player (discordID, discordName, riotID, lolRank, preferences, toxicity) VALUES (?, ?, '', 'Bronze', '11111', 0)"
+            query = "INSERT INTO Player (discordID, discordName, riotID, lolRank, preferences, toxicity) VALUES (?, ?, '', 'unranked', '44444', 0)"
             args = (member.id, member.name,)
             cur.execute(query, args)
             dbconn.commit()
@@ -592,6 +597,17 @@ def check_database():
     try:
         dbconn = sqlite3.connect("bot.db")
         cur = dbconn.cursor()
+
+        # We're always going to drop and rebuild these objects using the .env file settings
+        cur.execute("DROP VIEW IF EXISTS vw_TierModifier")
+        cur.execute("DROP TABLE IF EXISTS TierMapping")
+
+        # Triggers cannot be created with a IF NOT EXISTS so we will try to drop it and create it each run
+        cur.execute("DROP TRIGGER IF EXISTS RankChangeTrigger")
+
+        # Now create all objects
+        cur.execute("CREATE TABLE TierMapping (lolRank varchar(64), tier int);")
+
         cur.execute("""CREATE TABLE IF NOT EXISTS Player (
             discordID bigint PRIMARY KEY     	-- Unique Discord identifier for the player, will serve as PK
             , discordName nvarchar(64)			-- Player's Discord name
@@ -621,6 +637,22 @@ def check_database():
             , FOREIGN KEY (discordID) REFERENCES Player (discordID)
             );""")
         
+        cur.execute("""CREATE TABLE  IF NOT EXISTS RankHistory (
+            discordID bigint
+            , changedate date
+            , oldrank varchar(64)
+            , newrank varchar(64));""")
+
+        cur.execute("""CREATE TRIGGER RankChangeTrigger
+            AFTER UPDATE ON Player
+            FOR EACH ROW
+            BEGIN
+                -- Insert the change into RankHistory table only if lolRank has been updated
+                INSERT INTO RankHistory (discordID, changedate, oldrank, newrank)
+                SELECT NEW.discordID, DATE('now'), OLD.lolRank, NEW.lolRank
+                WHERE NEW.lolRank <> OLD.lolRank;
+            END;""")
+
         cur.execute("""CREATE VIEW IF NOT EXISTS vw_Points AS
             WITH totals AS (
             SELECT p.discordID 
@@ -639,32 +671,55 @@ def check_database():
             FROM totals t
             INNER JOIN Player p ON p.discordID = t.discordID""")        
 
+        cur.execute(f"""CREATE VIEW vw_TierModifier AS
+            WITH totals AS (
+            SELECT p.discordID 
+                , SUM(CASE WHEN teamName = gameWinner THEN 1 ELSE 0 END) Wins
+                , SUM(CASE WHEN teamName != 'Participation' THEN 1 ELSE 0 END) GamesPlayed
+            FROM Player p
+            INNER JOIN GameDetail gd ON gd.discordID = p.discordID
+            INNER JOIN Games g ON g.gameID = gd.gameID
+            WHERE g.gameDate >= (
+                SELECT COALESCE((SELECT max(changedate) 
+                FROM RankHistory 
+                WHERE discordID = p.discordID), (SELECT min(gameDate) FROM Games)))
+            GROUP BY p.discordID),
+
+            winratio AS (
+            SELECT t.discordID, Wins, GamesPlayed
+                , CASE WHEN Wins = 0 OR GamesPlayed = 0 THEN 0 ELSE CAST(Wins AS float) / CAST(GamesPlayed AS float) END WinRatio
+            FROM totals t
+            INNER JOIN Player p ON p.discordID = t.discordID)
+
+            SELECT discordID, CASE WHEN GamesPlayed >= {GAMESPLAYED} AND WinRatio >= {WINRATIO} THEN 1 ELSE 0 END tiermodifier
+            FROM winratio
+            """)
+
         cur.execute("""CREATE VIEW IF NOT EXISTS vw_Player AS
-                SELECT 
-                CASE WHEN COALESCE(tieroverride,0) = 0 OR COALESCE(tieroverride,0) = '' THEN 
-                    CASE LOWER(lolRank)
-                    WHEN 'unranked' THEN 11
-                    WHEN 'iron' THEN 10
-                    WHEN 'bronze' THEN 9
-                    WHEN 'silver' THEN 8 
-                    WHEN 'gold' THEN 7 
-                    WHEN 'platinum' THEN 6 
-                    WHEN 'emerald' THEN 5 
-                    WHEN 'diamond' THEN 4 
-                    WHEN 'master' THEN 3 
-                    WHEN 'grandmaster' THEN 2 
-                    WHEN 'challenger' THEN 1 
-                    END 
+            SELECT 
+                CASE WHEN COALESCE(tieroverride,0) = 0 OR COALESCE(tieroverride,0) = '' 
+				THEN tier - COALESCE(tiermodifier, 0)
                 ELSE tieroverride
                 END Tier
                 , RiotID
-                , discordID
+                , Player.discordID
                 , SUBSTRING(preferences, 1, 1) AS top_priority
                 , SUBSTRING(preferences, 2, 1) AS jungle_priority
                 , SUBSTRING(preferences, 3, 1) AS mid_priority
                 , SUBSTRING(preferences, 4, 1) AS bot_priority
                 , SUBSTRING(preferences, 5, 1) AS support_priority
-            FROM Player""")
+            FROM Player
+			INNER JOIN TierMapping tm ON tm.lolrank = Player.lolRank
+			LEFT OUTER JOIN vw_TierModifier mod ON mod.discordID = Player.discordID""")
+
+        # Finally insert the tier mapping data from .env
+        cur.execute(f"""INSERT INTO TierMapping (lolRank, tier) VALUES ('unranked', {UNRANKED}),
+            ('iron', {IRON}), ('bronze', {BRONZE}), ('silver', {SILVER}), ('gold', {GOLD}),
+            ('platinum', {PLATINUM}), ('emerald', {EMERALD}), ('diamond', {DIAMOND}), ('master', {MASTER}),
+            ('grandmaster', {GRANDMASTER}), ('challenger', {CHALLENGER})
+            """)
+
+        dbconn.commit()
 
         print ("Database is configured")
     except sqlite3.Error as e:
