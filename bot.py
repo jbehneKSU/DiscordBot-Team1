@@ -1420,6 +1420,10 @@ async def riotid(interaction, id: str):
     description = 'Initiate Tournament Check-In.  Add timeout in seconds or use the default of 900 - 15 minutes.',
     guild = discord.Object(GUILD))
 async def checkin(interaction, timeout: int=900):
+    if not is_admin(interaction):
+        await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
+        return    
+    
     view = CheckinButtons(timeout=timeout)
     await interaction.response.send_message(f'Check-In for the tournament has started! You have {timeout//60} minutes to check-in.', view = view)
 
@@ -1451,6 +1455,10 @@ async def roleselect(interaction):
     description = 'initiate check for volunteers',
     guild = discord.Object(GUILD))
 async def volunteer(interaction):
+    if not is_admin(interaction):
+        await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
+        return    
+    
     view = volunteerButtons()
     await interaction.response.send_message('The Volunteer check has started! You have 15 minutes to volunteer if you wish to sit out', view = view)
 
@@ -1460,6 +1468,10 @@ async def volunteer(interaction):
         description = 'Give a user a point of toxicity.',
         guild = discord.Object(GUILD))
 async def toxicity(interaction: discord.Interaction, discord_username: str):
+    if not is_admin(interaction):
+        await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
+        return
+
     try:
         found_user = update_toxicity(interaction, discord_username)
         if found_user:
@@ -1475,6 +1487,10 @@ async def toxicity(interaction: discord.Interaction, discord_username: str):
     description = 'Remove all users from Players and Volunteer roles.',
     guild = discord.Object(GUILD))
 async def remove(interaction: discord.Interaction):
+    if not is_admin(interaction):
+        await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
+        return    
+
     try:
         player = get(interaction.guild.roles, name = 'Player')
         volunteer = get(interaction.guild.roles, name = 'Volunteer')
@@ -1495,6 +1511,10 @@ async def remove(interaction: discord.Interaction):
         description='Find all players and volunteers currently enrolled in the game',
         guild = discord.Object(GUILD))
 async def players(interaction: discord.Interaction):
+    if not is_admin(interaction):
+        await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
+        return
+
     message = ''
 
     try:
@@ -1554,6 +1574,10 @@ async def players(interaction: discord.Interaction):
     description = "Form teams for all players enrolled in the game.",
     guild = discord.Object(GUILD))
 async def matchmake(interaction: discord.Interaction, match_number: int):
+    if not is_admin(interaction):
+        await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
+        return    
+    
     # Create empty lobby vars for 2 and 3, 1 will always be created
     embedLobby2 = None
     embedLobby3 = None
@@ -1803,6 +1827,10 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
     #         ])]
     )
 async def win(interaction: discord.Interaction, lobby: int, winner: str):
+    if not is_admin(interaction):
+        await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
+        return    
+    
     try:
         # Create database connection
         dbconn = sqlite3.connect("bot.db")
@@ -1844,6 +1872,10 @@ async def win(interaction: discord.Interaction, lobby: int, winner: str):
     description = "Shows all games that have not been closed with /win",
     guild = discord.Object(GUILD))
 async def activegames(interaction: discord.Interaction):
+    if not is_admin(interaction):
+        await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
+        return
+
     try:
         # Create database connection
         dbconn = sqlite3.connect("bot.db")
@@ -1882,6 +1914,10 @@ async def activegames(interaction: discord.Interaction):
         description= 'Export database to Google sheets.',
         guild = discord.Object(GUILD))
 async def export(interaction):
+    if not is_admin(interaction):
+        await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
+        return
+
     view = ExportButtons()
     await interaction.response.send_message(f'Use the buttons below to export the database to Google sheets', view = view, ephemeral=True)
 
