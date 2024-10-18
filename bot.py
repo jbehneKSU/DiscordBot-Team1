@@ -575,7 +575,7 @@ def register_player(interaction: discord.Interaction):
 
         if data[0] == 0:
             query = "INSERT INTO Player (discordID, discordName, riotID, lolRank, preferences, toxicity) VALUES (?, ?, '', 'unranked', '44444', 0)"
-            args = (member.id, member.name,)
+            args = (member.id, member.display_name,)
             cur.execute(query, args)
             dbconn.commit()
 
@@ -586,9 +586,9 @@ def register_player(interaction: discord.Interaction):
             cur.execute(query, args)
             result = cur.fetchone()
 
-            if member.name != result[0]:
+            if member.display_name != result[0]:
                 query = "UPDATE Player SET discordName = ? WHERE discordID = ?"
-                args = (member.name, member.id,)
+                args = (member.display_name, member.id,)
                 cur.execute(query, args)
                 dbconn.commit()                
 
