@@ -306,7 +306,7 @@ class ExportButtons(discord.ui.View):
             style = discord.ButtonStyle.green)
     async def export_points(self, interaction: discord.Interaction, button: discord.ui.Button):
         today = datetime.now()
-        sheets_export_points("Points" + str(today.strftime('%m%d%Y')))
+        sheets_export_points("Points_" + str(today.strftime('%m%d%Y')))
         await interaction.response.edit_message(view = self)
         await interaction.followup.send('Points data exported.', ephemeral=True)   
         
@@ -317,6 +317,15 @@ class ExportButtons(discord.ui.View):
         await interaction.response.defer()
         sheets_export_games()
         await interaction.followup.send('Game data exported.', ephemeral=True)
+
+    @discord.ui.button(
+            label = "Export Rank History",
+            style = discord.ButtonStyle.green)
+    async def export_rankhistory(self, interaction: discord.Interaction, button: discord.ui.Button):
+        today = datetime.now()
+        sheets_export_playerrankhistory("RankHistory_" + str(today.strftime('%m%d%Y')))
+        await interaction.response.edit_message(view = self)
+        await interaction.followup.send('Rank history exported.', ephemeral=True)        
 
 
 #endregion CLASSES
@@ -1185,6 +1194,50 @@ def sheets_export_players(sheet_name):
                 mid_priority, bot_priority, support_priority 
                 FROM vw_Player
                 INNER JOIN Player p ON p.discordID = vw_Player.discordID"""
+        cur.execute(query)
+
+        # Get the column names (headers)
+        headers = [description[0] for description in cur.description]
+
+        # Execute the query and capture the results
+        rows = cur.fetchall()
+
+        # Convert fetched data to a list of lists suitable for Google Sheets
+        data = [list(map(str, row)) for row in rows]
+
+        # Add headers if needed (optional)
+        data.insert(0, headers)
+
+        # Calculate the range based on data size
+        start_cell = 'A1'
+        end_cell = f'{chr(ord("A") + len(data[0]) - 1)}{len(data)}'
+        range_name = f'{sheet_name}!{start_cell}:{end_cell}'
+
+        # Request body for updating values
+        body = {'values': data}
+
+        # Write data to the sheet using the update method
+        result = service.spreadsheets().values().update(spreadsheetId=SHEETS_ID,range=range_name,valueInputOption='RAW',body=body).execute()  
+
+    except sqlite3.Error as e:
+        print (f'Database error occurred: {e}')
+
+    finally:
+        cur.close()
+        dbconn.close() 
+
+#Method to export the player's rank change
+def sheets_export_playerrankhistory(sheet_name):
+    # First check if the sheet exists yet, if yes clear it out
+    sheets_create(sheet_name, True)
+
+    try:
+        # Create the database connection
+        dbconn = sqlite3.connect("bot.db")
+        cur = dbconn.cursor()
+
+        # Query to get the information from the player table
+        query = "SELECT * FROM RankHistory"
         cur.execute(query)
 
         # Get the column names (headers)
