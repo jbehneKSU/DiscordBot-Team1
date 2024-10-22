@@ -9,17 +9,33 @@ Project is to create a Discord bot that can perform administrative procedures fo
 To setup the discord bot you will need a couple of things.
 Before you begin, you will need a file named .env (just like that nothing else) in the same folder as the bot.py file
 
-Within the .env file you will need to put the following things:
+Within the .env file you will need to put the following operational keys:
+(Note that the Google Sheets ID must be in double quotes, all other keys should be pasted as-is)
 
-- BOT_TOKEN =
+- BOT_TOKEN=
+- GUILD_ID=
+- CHANNEL_ID=
+- GOOGLE_SHEETS_ID=
+- GEMINI_API_KEY=
+- RIOT_API_KEY=
 
-- GUILD_TOKEN =
+Below the operational keys there are also some configuration items used for calculating a player's tier:
+(These are the defaults as of the documentation period and subject to change as needed)
+- unranked = 11
+- iron = 10
+- bronze = 9
+- silver = 8 
+- gold = 7 
+- platinum = 6 
+- emerald = 5 
+- diamond = 4 
+- master = 3 
+- grandmaster = 2 
+- challenger = 1 
 
-- GOOGLE_SHEETS_ID =
+- winratio = .67
+- gamesplayed = 10
 
-- GOOGLE_SHEETS_NAME =
-
-The bot token will be the discord bot token that you create on the discord developer dashboard.
 
 ## How to make the discord bot token ## 
 You need to go to https://discord.com/developers/applications and create a new developer application.
@@ -67,30 +83,21 @@ You may need to create these folders, but these are necessary to make the bot ru
 The Required Packages for this bot to be ran on a computer are the following:
 
 - asyncio
-
 - discord
-
 - itertools
-
-- gspread
-
 - dotenv
-
+- python-gemini-api
 - google api
 
 The google API package installation is found in the link on how to setup google api access.
 
-To install the other packages, run pip3 install and it should install the package. Do this for all the packages and you should be good to move on
+To install the other packages, run pip install and it should install the package. Do this for all the packages and you should be good to move on
+(Use pip3 for Mac/Linux)
 
 ## Final setup for the bot ## 
-Run the bot.py via python3 python3 bot.py
+Run the bot.py via python bot.py
+(Use python3 for Mac/Linux)
 
-And run any command that tries to access the google sheets
 
-these commands are points, toxicity, wins, matchmake
-
-This will pull up a google signin window in your browser. You must sign into the google account that has access to both the googlesheet and the api access
-
-Once that is done, the bot will function without issues
 
 
