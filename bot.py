@@ -1789,16 +1789,16 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
                 embedLobby1.add_field(name = 'Roles', value = '')
                 embedLobby1.add_field(name = 'Blue Team', value = '')
                 embedLobby1.add_field(name = 'Red Team', value = '')
-                embedLobby1.add_field(name = '', value = 'Top Laner')
+                embedLobby1.add_field(name = '', value = 'Top')
                 embedLobby1.add_field(name = '', value = blueteam.top_laner.username)
                 embedLobby1.add_field(name = '', value = redteam.top_laner.username)
                 embedLobby1.add_field(name = '', value = 'Jungle')
                 embedLobby1.add_field(name = '', value = blueteam.jungle.username)
                 embedLobby1.add_field(name = '', value = redteam.jungle.username)
-                embedLobby1.add_field(name = '', value = 'Mid Laner')
+                embedLobby1.add_field(name = '', value = 'Mid')
                 embedLobby1.add_field(name = '', value = blueteam.mid_laner.username)
                 embedLobby1.add_field(name = '', value = redteam.mid_laner.username)
-                embedLobby1.add_field(name = '', value = 'Bot Laner')
+                embedLobby1.add_field(name = '', value = 'Bot')
                 embedLobby1.add_field(name = '', value = blueteam.bot_laner.username)
                 embedLobby1.add_field(name = '', value = redteam.bot_laner.username)
                 embedLobby1.add_field(name = '', value = 'Support')
@@ -2005,7 +2005,7 @@ async def activegames(interaction: discord.Interaction):
             embedGames.add_field(name = '', value = f"Lobby #{row[3]}")
 
         # Output the embed
-        await interaction.response.send_message(embed = embedGames)
+        await interaction.response.send_message(embed = embedGames, ephemeral=True)
         
     # Catch sql errors, print to console and output message to Discord
     except sqlite3.Error as e:
