@@ -33,9 +33,9 @@ RIOT_API_KEY = os.getenv('RIOT_API_KEY') #Gets the Riot API Key from the .env an
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY') #Gets the API key for Google Gemini API
 
 # The .env variables control how tier calculations are performed
-GAMESPLAYED = os.getenv('gamesplayed')
-WINRATIO = os.getenv('winratio')
-UNRANKED = os.getenv('unranked')
+GAMESPLAYED = os.getenv('gamesplayed') #Minimum games played to consider a higher tier
+WINRATIO = os.getenv('winratio') #Winration needed to consider a higher tier
+UNRANKED = os.getenv('unranked') #The remaining block sets the .env value of each rank's tier
 IRON = os.getenv('iron')
 BRONZE = os.getenv('bronze')
 SILVER = os.getenv('silver')
@@ -331,7 +331,7 @@ class ExportButtons(discord.ui.View):
 #endregion CLASSES
 
 
-#region METHODS
+#region GENERAL METHODS
 
 #Method to cleanup database game entries if a matchmake command fails
 def reset_db_match(match: int):
@@ -718,7 +718,7 @@ def check_database():
                 , SUBSTRING(preferences, 4, 1) AS bot_priority
                 , SUBSTRING(preferences, 5, 1) AS support_priority
             FROM Player
-			INNER JOIN TierMapping tm ON tm.lolrank = Player.lolRank
+			INNER JOIN TierMapping tm ON lower(tm.lolrank) = lower(Player.lolRank)
 			LEFT OUTER JOIN vw_TierModifier mod ON mod.discordID = Player.discordID""")
 
         # Finally insert the tier mapping data from .env
@@ -833,75 +833,100 @@ def update_riotid(interaction: discord.Interaction, id):
         cur.close()
         dbconn.close()     
 
+#Method to update a game with the winner
+def update_win(lobby, winner):
+    try:
+        # Create the database connection
+        dbconn = sqlite3.connect("bot.db")
+        cur = dbconn.cursor()
+
+        # This query will set the game winner and isComplete for the passed lobby
+        query = f"UPDATE Games SET isComplete = 1, gameWinner = ? WHERE isComplete = 0 AND gameLobby = ?"
+        cur.execute(query, [winner.upper(), lobby])
+        dbconn.commit()
+    
+        return True
+    except sqlite3.Error as e:
+        print(f"Terminating due to database team win error: {e}")
+        return False
+
+    finally:
+        cur.close()
+        dbconn.close() 
+
+#Method to determine if the user is an admin
+def is_admin(interaction: discord.Interaction) -> bool:
+    return interaction.user.guild_permissions.administrator
+
+#endregion GENERAL METHODS
+
+#region MATCHMAKING
+
 #Method to assign roles to players based on their preferred priority
 def assign_roles(players):
+    # Create an array of the possible roles
     roles = ['top', 'jungle', 'mid', 'bot', 'support']
+
+    # Create a priority map for the player's preferences
     priority_mapping = {1: [], 2: [], 3: [], 4: [], 5: []}
 
+    # Loop through each player and map their preferences for each lane
     for player in players:
         for idx, priority in enumerate([player.top_priority, player.jungle_priority, player.mid_priority, player.bot_priority, player.support_priority]):
             priority_mapping[int(priority)].append((player, roles[idx]))
     
+    # Create the array for the role assignments
     role_assignments = {}
+
+    # Create the list of players that have been assigned
     assigned_players = set()
     
+    # Sort by the lane priority and loop through assigning players to their most desired lanes first
     for priority in sorted(priority_mapping.keys()):
         for player, role in priority_mapping[priority]:
             if role not in role_assignments and player not in assigned_players:
                 role_assignments[role] = player
                 assigned_players.add(player)
     
+    # Return the role assignments
     return role_assignments
 
-#Method to create teams by sorting players by tier and then assigning roles
-def create_teams(players):
-    players.sort(key=lambda x: x.tier)
-    team_size = len(players) // 2
-
-    red_team_players = players[:team_size]
-    blue_team_players = players[team_size:]
-
-    red_team_roles = assign_roles(red_team_players)
-    blue_team_roles = assign_roles(blue_team_players)
-
-    red_team = Team(
-        top_laner=red_team_roles['top'],
-        jungle=red_team_roles['jungle'],
-        mid_laner=red_team_roles['mid'],
-        bot_laner=red_team_roles['bot'],
-        support=red_team_roles['support']
-    )
-
-    blue_team = Team(
-        top_laner=blue_team_roles['top'],
-        jungle=blue_team_roles['jungle'],
-        mid_laner=blue_team_roles['mid'],
-        bot_laner=blue_team_roles['bot'],
-        support=blue_team_roles['support']
-    )
-
-    return red_team, blue_team
-
-#Method that validates players are within 1 tier of each other and returns true or false
+#Method that validates players are within <degree> tier of each other and returns true or false
 def validate_team_matchup(red_team, blue_team, degree):
+    # Create an array of the possible roles
     roles = ['top_laner', 'jungle', 'mid_laner', 'bot_laner', 'support']
+    
+    # Loop through each role
     for role in roles:
+        # Assign the player for this role for each team
         red_player = getattr(red_team, role)
         blue_player = getattr(blue_team, role)
+
+        # Compare the difference between the tier, if not within the allowed degree return a false
         if abs(red_player.tier - blue_player.tier) > degree:
             return False
+        
+    # At this point the validation has passed and true is returned
     return True
 
 #Method to create and return a balanced team
 def find_balanced_teams(players, degree):
+    # itertools will form a list of every possible combination of the 10 players divided into 2 teams
     possible_combinations = itertools.combinations(players, len(players) // 2)
+
+    # Loop through every possible combination
     for combination in possible_combinations:
+        # First assign the combination of players to the red team
         red_team_players = list(combination)
+
+        # Next assign the remaining players not in red to the blue team
         blue_team_players = [player for player in players if player not in red_team_players]
         
+        # Next call the role assignment for both sets of players
         red_team_roles = assign_roles(red_team_players)
         blue_team_roles = assign_roles(blue_team_players)
 
+        # Create the team class for red and blue
         red_team = Team(
             top_laner=red_team_roles['top'],
             jungle=red_team_roles['jungle'],
@@ -918,39 +943,43 @@ def find_balanced_teams(players, degree):
             support=blue_team_roles['support']
         )
 
+        # Call this method to validate the tier difference of opposing lanes are within the degree threshold and return the teams if true
         if validate_team_matchup(red_team, blue_team, degree):
             return red_team, blue_team
 
+    # If the code gets here there is no possible combination of players that meets the tier difference
     return None, None
 
 #Method to create balanced teams using the MAX_DEGREE_TIER and USE_AI_MATCHMAKE to manipulate the results
 def balance_teams(players):
     # If the USE_AI_MATCHMAKE is set to true the code will use Gemini to form the teams
     if USE_AI_MATCHMAKE:
+        # Attempt to form teams by calling the Gemini method
         red_team, blue_team = gemini_ai_find_teams(players)
         
+        # If either team did not form this will return none
         if red_team is None or blue_team is None:
             return None, None
     
     # Otherwise teams will be created using the python methods
     else:
-        # Attempt to create two teams with a degree of tier difference of 1
-        red_team, blue_team = find_balanced_teams(players, 1)
+        # Attempt to create two teams with a degree of tier difference starting at 0 for the most balanced team possible
+        red_team, blue_team = find_balanced_teams(players, 0)
         
         # Set # of attempts to 1
         attempts = 1
 
         # Begin a loop to run while either team is still not formed
         while red_team is None or blue_team is None:
-            # Each iteration of the loop will try again, every 10 iterations will add one more degree of separation between opposing lanes
-            red_team, blue_team = find_balanced_teams(players, attempts//10+1)
+            # Check to see if the number of attempts has met or exceeded the max degree setting and return none if true
+            if attempts > MAX_DEGREE_TIER and (red_team is None or blue_team is None):
+                return None, None    
+
+            # Each iteration of the loop will try again with each iteration adding one more degree of separation between opposing lanes
+            red_team, blue_team = find_balanced_teams(players, attempts)
 
             # Increment the attempts counter
             attempts += 1
-
-            # Check to see if the number of attempts has met or exceeded the max degree setting and exit if true
-            if attempts >= MAX_DEGREE_TIER * 10 and (red_team is None or blue_team is None):
-                return None, None    
 
     # If both teams were formed this method ends with returning both teams
     return blue_team, red_team
@@ -1037,7 +1066,7 @@ def gemini_ai_find_teams(players):
         print(f"Error occurred in AI generation: {e}")
         return None, None
 
-#Method to take users in the player role and pull their preferences to pass to the create_teams method
+#Method to take users in the player role and pull their preferences to pass to the balance_teams method
 def create_playerlist(player_users):
     try:
         # Create an empty array
@@ -1073,26 +1102,9 @@ def create_playerlist(player_users):
         cur.close()
         dbconn.close()    
 
-#Method to update a game with the winner
-def update_win(lobby, winner):
-    try:
-        # Create the database connection
-        dbconn = sqlite3.connect("bot.db")
-        cur = dbconn.cursor()
+#endregion MATCHMAKING
 
-        # This query will set the game winner and isComplete for the passed lobby
-        query = f"UPDATE Games SET isComplete = 1, gameWinner = ? WHERE isComplete = 0 AND gameLobby = ?"
-        cur.execute(query, [winner.upper(), lobby])
-        dbconn.commit()
-    
-        return True
-    except sqlite3.Error as e:
-        print(f"Terminating due to database team win error: {e}")
-        return False
-
-    finally:
-        cur.close()
-        dbconn.close() 
+# region GOOGLE SHEETS
 
 #Method to check if a sheet exists, returns True/False
 def sheet_exists(sheet_name):
@@ -1485,12 +1497,7 @@ def sheets_export_games():
         cur.close()
         dbconn.close()     
 
-#Method to determine if the user is an admin
-def is_admin(interaction: discord.Interaction) -> bool:
-    return interaction.user.guild_permissions.administrator
-
-#endregion METHODS
-
+#endregion GOOGLE SHEETS
 
 
 #region COMMANDS
