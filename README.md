@@ -65,7 +65,7 @@ The sheet id is just the ID of the google sheet that you are trying to use. To f
 
 docs.google.com/spreadsheets/d/ID_IS_HERE/
 
-[!Note]
+>[!Note]
 This token must be in double quotes in the .env file
 
 ### How to setup Google API access 
@@ -143,7 +143,7 @@ There are 3 global settings that affect matchmaking which can be changed anytime
 - USE_RANDOM_SORT - this setting will only make a difference if there are more than 10 players, it will shuffle the list instead of sorting by tier to provide diversity and is True by default
 - USE_AI_MATCHMAKE - this setting will change the matchmaking code to use a Google Gemini prompt instead of the Python algorithm and is False by default
 
-[!TIP]
+>[!TIP]
 Depending on the settings above and the tier configurations there is a chance you will get a message that no team could be formed.  If there are only 10 players this message means some adjustment will need to be made to either player(s) tiers or the allowable difference setting.  If there are 20 or more players AND the USE_RANDOM_SORT is set to True, the command can be retried a few times to keep shuffling the player list or random sort can be turned off.
 
 ### General functionality overview
@@ -170,13 +170,13 @@ If USE_AI_MATCHMAKE is set to False the Python algorithm will be used to form tw
 7. If the validation fails it will continue through every combination possible, then back to the find_balanced_teams() method to determine if it should try with the next degree of tier difference
 8. If no team can be formed it will output a message and the admin will need to consider changes to settings or tiers to continue
 
-[!TIP]
+>[!TIP]
 The MAX_DEGREE_TIER is exactly how it sounds, a **maximum** allowed difference.  The algorithm will attempt to first form teams with a 0 difference, then 1, and on up to the number specified in that parameter.
 
 ### Gemini AI Matchmaking
 The Gemini method takes the same player list and creates a prompt by translating the list into a JSON string.  The output back from Gemini is specified in JSON as well and is parsed back out to create the Team classes.
 
-[!CAUTION]
+>[!CAUTION]
 In its current form, the prompt has been unreliable in both following preferences AND adhering to the allowabled difference between opposing lane tiers.  Better prompt engineering may be necessary to improve results.
 
 
