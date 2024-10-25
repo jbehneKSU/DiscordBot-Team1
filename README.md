@@ -130,6 +130,7 @@ To install the packages, run pip install <packagename> and it should install the
 The SQLITE database schema is built into the Python checkdatabase() method and is called every time the bot is started.  Most objects are only created if the database file does not already exist, but some objects are dropped and recreated each run to add custom configurations into the database.
 
 Objects that are created only for a new database:
+'''
 CREATE TABLE Player (
     discordID bigint PRIMARY KEY     	-- Unique Discord identifier for the player, will serve as PK
     , discordName nvarchar(64)			-- Player's Discord name
@@ -165,6 +166,7 @@ CREATE TABLE RankHistory (
     , oldrank varchar(64)   -- Player's old rank
     , newrank varchar(64)   -- Player's new rank
     )
+'''
 
 >[!Note]
 The player table also has a trigger that populates the RankHistory table anytime the Rank column changes for a player.
@@ -243,7 +245,7 @@ In its current form, the prompt has been unreliable in both following preference
 ### Tier calculation configuration
 As noted in the "How to setup the Discord Bot" and the "Database" section above, the League of Legend ranks are mapped to a tier score in the .env file.
 
-'
+'''
 SELECT 
     CASE WHEN COALESCE(tieroverride,0) = 0 OR COALESCE(tieroverride,0) = '' 
     THEN tier - COALESCE(tiermodifier, 0)
@@ -258,4 +260,5 @@ SELECT
     , SUBSTRING(preferences, 5, 1) AS support_priority
 FROM Player
 INNER JOIN TierMapping tm ON lower(tm.lolrank) = lower(Player.lolRank)
-LEFT OUTER JOIN vw_TierModifier mod ON mod.discordID = Player.discordID'
+LEFT OUTER JOIN vw_TierModifier mod ON mod.discordID = Player.discordID
+'''
