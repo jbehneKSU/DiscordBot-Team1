@@ -242,9 +242,39 @@ The Gemini method takes the same player list and creates a prompt by translating
 >[!CAUTION]
 In its current form, the prompt has been unreliable in both following preferences AND adhering to the allowabled difference between opposing lane tiers.  Better prompt engineering may be necessary to improve results.
 
-### Tier calculation configuration
+### How Tier Calculations Work
 As noted in the "How to setup the Discord Bot" and the "Database" section above, the League of Legend ranks are mapped to a tier score in the .env file.
 
+Here is a look at the code in the view that calculates whether a player's win rate and games played qualify them for a tier adjustment.
+
+```
+WITH totals AS (
+    SELECT p.discordID 
+        , SUM(CASE WHEN teamName = gameWinner THEN 1 ELSE 0 END) Wins
+        , SUM(CASE WHEN teamName != 'Participation' THEN 1 ELSE 0 END) GamesPlayed
+    FROM Player p
+    INNER JOIN GameDetail gd ON gd.discordID = p.discordID
+    INNER JOIN Games g ON g.gameID = gd.gameID
+    WHERE g.gameDate >= (
+        SELECT COALESCE((SELECT max(changedate) 
+        FROM RankHistory 
+        WHERE discordID = p.discordID), (SELECT min(gameDate) FROM Games)))
+    GROUP BY p.discordID),
+
+    winratio AS (
+    SELECT t.discordID, Wins, GamesPlayed
+        , CASE WHEN Wins = 0 OR GamesPlayed = 0 THEN 0 ELSE CAST(Wins AS float) / CAST(GamesPlayed AS float) END WinRatio
+    FROM totals t
+    INNER JOIN Player p ON p.discordID = t.discordID)
+
+    SELECT discordID, CASE WHEN GamesPlayed >= 10 AND WinRatio >= .67 THEN 1 ELSE 0 END tiermodifier
+    FROM winratio
+```
+>[!Note]
+The final select contains a CASE statement for WHEN "GamesPlayed >= 10 AND WinRatio >= .67", the 10 and .67 numbers are pulled from the .env and built into this view every time the bot is started to allow for custom settings.
+
+
+This is a look at the Player view, here you see the Player table is joined to the TierMapping and vw_TierModifier objects for the most accurate, and customizable, tier calculation possible.
 ```
 SELECT 
     CASE WHEN COALESCE(tieroverride,0) = 0 OR COALESCE(tieroverride,0) = '' 
@@ -262,3 +292,11 @@ FROM Player
 INNER JOIN TierMapping tm ON lower(tm.lolrank) = lower(Player.lolRank)
 LEFT OUTER JOIN vw_TierModifier mod ON mod.discordID = Player.discordID
 ```
+>[!Tip]
+If a number exists in the "tieroverride" column for a player it will automatically override all calculations, including the win modifier.
+
+## Admin Commands
+Listing of admin only commands and their function
+
+## Player Commands
+Listing of player commands and their function
