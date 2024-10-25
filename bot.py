@@ -647,10 +647,12 @@ def check_database():
             );""")
         
         cur.execute("""CREATE TABLE  IF NOT EXISTS RankHistory (
-            discordID bigint
-            , changedate date
-            , oldrank varchar(64)
-            , newrank varchar(64));""")
+            discordID bigint        -- Player ID joining back to the Player table 
+            , changedate date       -- Date the player's rank changed
+            , oldrank varchar(64)   -- Player's old rank
+            , newrank varchar(64)   -- Player's new rank
+            , FOREIGN KEY (discordID) REFERENCES Player (discordID)
+            );""")
 
         cur.execute("""CREATE TRIGGER RankChangeTrigger
             AFTER UPDATE ON Player

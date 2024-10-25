@@ -126,6 +126,67 @@ The Required Packages for this bot to be ran on a computer are the following:
 To install the packages, run pip install <packagename> and it should install the package. Do this for all the packages and you should be good to move on
 (Use pip3 for Mac/Linux)
 
+### Database
+The SQLITE database schema is built into the Python checkdatabase() method and is called every time the bot is started.  Most objects are only created if the database file does not already exist, but some objects are dropped and recreated each run to add custom configurations into the database.
+
+Objects that are created only for a new database:
+CREATE TABLE Player (
+    discordID bigint PRIMARY KEY     	-- Unique Discord identifier for the player, will serve as PK
+    , discordName nvarchar(64)			-- Player's Discord name
+    , riotID nvarchar(64)				-- Player's Riot account name (Name#Tagline format)
+    , lolRank varchar(32)				-- Player's LOL rank
+    , preferences char(5)				-- Player's encoded lane preferences (1H-5L) in order of Top, Jungle, Mid, ADC, and Support
+    , toxicity int                      -- Player's toxicity score
+    , tieroverride int                  -- Used by admins to override player's tier score, 0 uses calculated value
+    )
+
+CREATE TABLE Games (
+    gameID INTEGER PRIMARY KEY AUTOINCREMENT	    -- Unique ID to identify the game
+    , gameDate date						-- Date of the game
+    , gameNumber tinyint				-- Game number (1, 2, 3)	
+    , gameLobby tinyint					-- Game Lobby (1, 2, 3) per 10 players
+    , gameWinner varchar(4)				-- Team that won this game (Blue/Red)
+    , isComplete bit                    -- Used to track incomplete games
+    )
+
+CREATE TABLE GameDetail (
+    gameID int NOT NULL			-- Game ID joining back to the Games table
+    , discordID bigint NOT NULL	-- Player ID joining back to the Player table
+    , teamName varchar(32)		-- Team of the Player in this game ('Red', 'Blue', 'Participation')
+    , gamePosition char(3)		-- Position played in this game (Top, Jng, Mid, ADC, Sup)
+    , MVP bit					-- 0 = no MVP, 1 = MVP
+    , FOREIGN KEY (gameID) REFERENCES Games (gameID)
+    , FOREIGN KEY (discordID) REFERENCES Player (discordID)
+    )
+
+CREATE TABLE RankHistory (
+    discordID bigint        -- Player ID joining back to the Player table 
+    , changedate date       -- Date the player's rank changed
+    , oldrank varchar(64)   -- Player's old rank
+    , newrank varchar(64)   -- Player's new rank
+    )
+
+>[!Note]
+The player table also has a trigger that populates the RankHistory table anytime the Rank column changes for a player.
+
+There are also two Views only created on the first run:
+vw_Player - this view calculates the Player's tier score, explained in more depth below
+vw_Points - this view joins the Games and GameDetails table for an easy look at every player's score
+
+This table is automatically dropped and recreated every time the bot is started.  This is because the Rank to Tier mappings from the .env file are loaded into this table which makes it configurable.  The table is very simple and contains the rank and the tier score assigned.
+
+TierMapping (lolRank varchar(64), tier int)
+
+
+In addition to the Rank to Tier mapping, there are two more configurations in the .env file, winratio and gamesplayed.
+The values in these two variables is used to increase a player's calculated tier if they are performing well in the KSU league.
+The database view vw_TierModifier is dropped and created on each run of the bot to add these two values, which is tied to the vw_Player object to adjust the tier if the criteria is met.
+
+The default values are a winratio of .67 and gamesplayed 10.  This means that if the player has a 67% or higher win rate AND they have played 10+ games in the same rank, they will receive an extra 1 adjustment to their calculated tier.
+
+>[!Tip]
+The RankHistory comes into play in that last statement, that table is also used to determine the length of time in a rank and whether the win rate and games played occurred within the current rank.
+
 ## Running the bot
 Run the bot.py via python bot.py
 (Use python3 for Mac/Linux)
@@ -179,4 +240,22 @@ The Gemini method takes the same player list and creates a prompt by translating
 >[!CAUTION]
 In its current form, the prompt has been unreliable in both following preferences AND adhering to the allowabled difference between opposing lane tiers.  Better prompt engineering may be necessary to improve results.
 
+### Tier calculation configuration
+As noted in the "How to setup the Discord Bot" and the "Database" section above, the League of Legend ranks are mapped to a tier score in the .env file.
 
+'
+SELECT 
+    CASE WHEN COALESCE(tieroverride,0) = 0 OR COALESCE(tieroverride,0) = '' 
+    THEN tier - COALESCE(tiermodifier, 0)
+    ELSE tieroverride
+    END Tier
+    , RiotID
+    , Player.discordID
+    , SUBSTRING(preferences, 1, 1) AS top_priority
+    , SUBSTRING(preferences, 2, 1) AS jungle_priority
+    , SUBSTRING(preferences, 3, 1) AS mid_priority
+    , SUBSTRING(preferences, 4, 1) AS bot_priority
+    , SUBSTRING(preferences, 5, 1) AS support_priority
+FROM Player
+INNER JOIN TierMapping tm ON lower(tm.lolrank) = lower(Player.lolRank)
+LEFT OUTER JOIN vw_TierModifier mod ON mod.discordID = Player.discordID'
