@@ -835,6 +835,10 @@ def update_riotid(interaction: discord.Interaction, id):
         cur.close()
         dbconn.close()     
 
+#Method to determine if the user is an admin
+def is_admin(interaction: discord.Interaction) -> bool:
+    return interaction.user.guild_permissions.administrator
+
 #Method to update a game with the winner
 def update_win(lobby, winner):
     try:
@@ -848,6 +852,7 @@ def update_win(lobby, winner):
         dbconn.commit()
     
         return True
+    
     except sqlite3.Error as e:
         print(f"Terminating due to database team win error: {e}")
         return False
@@ -856,9 +861,95 @@ def update_win(lobby, winner):
         cur.close()
         dbconn.close() 
 
-#Method to determine if the user is an admin
-def is_admin(interaction: discord.Interaction) -> bool:
-    return interaction.user.guild_permissions.administrator
+async def start_vote(interaction: discord.Interaction, gameID: int, winner: str):
+    try:
+        # Create the database connection
+        dbconn = sqlite3.connect("bot.db")
+        cur = dbconn.cursor()
+
+        query = '''
+            with gameplayers as (
+            SELECT discordID, teamName
+            FROM GameDetail
+            WHERE gameID = ?
+            UNION
+            SELECT discordID, teamName
+            FROM GameDetail
+            WHERE gameID = 
+                (SELECT g2.gameID 
+                FROM Games g1 
+                INNER JOIN Games g2 ON g2.gameDate = g1.gameDate AND g2.gameLobby = 1
+                WHERE g1.gameID = ?)
+            AND teamName = 'PARTICIPATION')
+
+            SELECT gp.discordID, p.riotID, gp.teamName
+            FROM gameplayers gp
+            INNER JOIN Player p ON p.discordID = gp.discordID
+        '''
+
+        cur.execute(query, [gameID, gameID])
+        players = cur.fetchall()
+
+        # Create the embed
+        embed = discord.Embed(title="MVP Vote", description="Vote for the MVP of the match by selecting their name below!", color=discord.Color.gold())
+        # for player in players:
+        #     if player[2] == winner:
+        #         embed.add_field(name=player[1], value=f"Vote for {player[1]}", inline=False)
+
+        # Create buttons for each player
+        view = discord.ui.View()
+        for player in players:
+            if player[2] == winner:
+                button = discord.ui.Button(label=player[1], custom_id=f'vote_{player[0]}', style=discord.ButtonStyle.success)
+                button.callback = create_vote_callback(player[0])
+                view.add_item(button)
+
+        # Send the embed with buttons
+        message = await interaction.followup.send(embed=embed, view=view)
+
+        # Send the embed privately to each player
+        # for player in players:
+        #     user = await client.fetch_user(player[0])
+        #     await user.send(embed=embed, view=view)
+
+        # Start a timer to disable the buttons after 5 minutes
+        await asyncio.sleep(300)  
+        for item in view.children:
+            item.disabled = True
+
+        await message.edit(view=view)
+
+    except sqlite3.Error as e:
+        print(f"Terminating due to database MVP voting error: {e}")
+        return False
+
+def create_vote_callback(discord_id):
+    async def vote_callback(interaction):
+        voter_id = interaction.user.id
+
+        # # Ensure a user can only vote once
+        # async with aiosqlite.connect(DATABASE_PATH) as db:
+        #     async with db.execute("SELECT * FROM Votes WHERE match_id = ? AND voter_id = ?", (interaction.message.id, voter_id)) as cursor:
+        #         vote = await cursor.fetchone()
+        #         if vote:
+        #             await interaction.response.send_message("You have already voted.", ephemeral=True)
+        #             return
+
+        #     # Record the vote
+        #     await db.execute("INSERT INTO Votes (match_id, voter_id, voted_for) VALUES (?, ?, ?)",
+        #                      (interaction.message.id, voter_id, discord_id))
+        #     await db.commit()
+
+        # await interaction.response.send_message("Thank you for your vote!", ephemeral=True)
+
+        # Disable all buttons after a vote
+        for item in interaction.message.components:
+            for button in item.children:
+                button.disabled = True
+
+        await interaction.message.edit(view=interaction.message.components[0])
+
+    return vote_callback
 
 #endregion GENERAL METHODS
 
@@ -1953,16 +2044,16 @@ async def win(interaction: discord.Interaction, lobby: int, winner: str):
         dbconn = sqlite3.connect("bot.db")
         cur = dbconn.cursor()
 
-        # Create query to check if the passed Lobby # is a valid open game
-        query = 'SELECT EXISTS(SELECT gameID FROM Games WHERE isComplete = 0 AND gameLobby = ?)'
+        # Create query to check if the passed Lobby # is a valid open game by getting the gameID
+        query = 'SELECT gameID FROM Games WHERE isComplete = 0 AND gameLobby = ?'
         cur.execute(query, [lobby])
-        data = cur.fetchone()
+        gameID = cur.fetchone()
 
         # If the EXISTS returns a 0 then there is no active game for the lobby provided and the method ends
-        if data[0] != 1:
+        if gameID is None:
             await interaction.response.send_message(f"Lobby #{lobby} is not an active game, see /activegames", ephemeral=True)
             return
-        
+
     # Catch SQL errors and print a message to the console and Discord
     except sqlite3.Error as e:
         print(f"Terminating due to database active games error: {e}")
@@ -1982,6 +2073,7 @@ async def win(interaction: discord.Interaction, lobby: int, winner: str):
     # The method returns true/false, if true it outputs the message the update was made, if false is returned the method outputs the error
     if(update_win(lobby, winner)):
         await interaction.response.send_message(f"The winner for Lobby {lobby} has been set for the {winner} team!")
+        await start_vote(interaction, gameID[0], winner.upper())
 
 #Slash command to see active games
 @tree.command(
