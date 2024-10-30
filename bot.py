@@ -76,14 +76,6 @@ async def on_ready():
     await tree.sync(guild=discord.Object(GUILD))
     print(f'Logged in as {client.user}')
 
-"""#Logger to catch discord disconects and ignores them.
-class GatewayEventFilter(logging.Filter):
-    def __init__(self) -> None:
-        super().__init__('discord.gateway')
-    def filter(self, record: logging.LogRecord) -> bool:
-        if record.exc_info is not None and isinstance(record.exc_info[1], discord.ConnectionClosed):
-            return False
-        return True"""
 
 #region CLASSES
 #Player class.
@@ -146,13 +138,6 @@ class FillButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         save_preference(interaction, "Fill - 44444")
         await interaction.response.send_message(f'Set preference to "Fill"', ephemeral=True)
-
-##Help view - provide instructions, commands, and button choices
-## Add button to launch preferences, launch fill, and decribe functions, etc
-# class HelpView(discord.ui.view):
-#     def __init__(self):
-#         super().__init__()
-#         return
 
 #Dropdown view for rendering all dropdowns for player role preferences
 class PreferenceDropdownView(discord.ui.View):
@@ -326,7 +311,6 @@ class ExportButtons(discord.ui.View):
         sheets_export_playerrankhistory("RankHistory_" + str(today.strftime('%m%d%Y')))
         await interaction.response.edit_message(view = self)
         await interaction.followup.send('Rank history exported.', ephemeral=True)        
-
 
 #endregion CLASSES
 
@@ -923,9 +907,9 @@ async def start_vote(interaction: discord.Interaction, gameID: int, winner: str,
 
         # Send the embed with voting buttons to each player privately
         for player in players:
-##################################################################################################################################################
-#                   TEST CODE            
-##################################################################################################################################################
+    ##################################################################################################################################################
+    #                   TEST CODE            
+    ##################################################################################################################################################
             if player[0] == 537052038136201248: #This is only for testing purposes and should be removed
                 # Get the player's Discord ID
                 user = await client.fetch_user(player[0])
@@ -935,9 +919,9 @@ async def start_vote(interaction: discord.Interaction, gameID: int, winner: str,
 
                     # Start a 5-minute timer for each user to vote
                     # await asyncio.sleep(300)  # 300 seconds = 5 minutes
-##################################################################################################################################################
-#                   TEST CODE            
-##################################################################################################################################################                    
+    ##################################################################################################################################################
+    #                   TEST CODE            
+    ##################################################################################################################################################                    
                     await asyncio.sleep(15)  # REPLACE THIS TOO
                     
                     # After the time has elapsed the buttons will be disabled
@@ -1900,15 +1884,15 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
         volunteer_users = [member.name for member in volunteer_role.members]
         volunteer_ids = [member.id for member in volunteer_role.members]
 
-#region TESTCODE
-############################################################################################################
-#   TESTING ONLY
+    #region TESTCODE
+    ############################################################################################################
+    #   TESTING ONLY
         player_users = [500012,500028,500001,500008,500015,500002,500018,500026,500027,500030,500042,500044,500014,
             500022,500032,500035,500023,500041,500040,500029]
         
         volunteer_ids = [500031,500020,500037,500007,500011,500017,500039,]
-############################################################################################################
-#endregion TESTCODE
+    ############################################################################################################
+    #endregion TESTCODE
 
         # Ensure an even split of 10 players and end the method if not
         if len(player_users) % 10 != 0:
@@ -2209,23 +2193,57 @@ async def export(interaction):
     name = 'settings',
     description = "Testing placeholder for viewing and changing settings",
     guild = discord.Object(GUILD))
-async def settings(interaction: discord.Interaction, use_ai: str = ''):
+async def settings(interaction: discord.Interaction, use_ai: str = '', random_sort: str = '', max_tier: int = -1):
+    # This seemed to take longer than expected in testing so better to defer
     await interaction.response.defer(ephemeral=True)
     
+    # This is an admin only command so check and bounce if not an admin
     if not is_admin(interaction):
         await interaction.followup.send("This command is only for administrators.", ephemeral=True)
         return
     
+    # All params are options, if the AI value isn't blank AND it is true or false then it will change the global param
     if use_ai != '' and (use_ai.lower() == 'true' or use_ai.lower() == 'false'):
+        # If true then set it to true
         if use_ai.lower() == 'true':
             global USE_AI_MATCHMAKE
             USE_AI_MATCHMAKE = True
+        
+        # Otherwise it had to be false
         else:
             USE_AI_MATCHMAKE = False
 
+        # Display the change and exit
         await interaction.followup.send(f"USE_AI_MATCHMAKE has been set to {USE_AI_MATCHMAKE}", ephemeral=True)
         return        
 
+    # Same setup as AI above
+    if random_sort != '' and (random_sort.lower() == 'true' or random_sort.lower() == 'false'):
+        # If true then set it to true
+        if random_sort.lower() == 'true':
+            global USE_RANDOM_SORT
+            USE_RANDOM_SORT = True
+        
+        # Otherwise it had to be false
+        else:
+            USE_RANDOM_SORT = False
+
+        # Display the change and exit
+        await interaction.followup.send(f"USE_RANDOM_SORT has been set to {USE_RANDOM_SORT}", ephemeral=True)
+        return               
+
+    # Same premise although this is an integer value instead of true/false
+    if max_tier != '' and isinstance(max_tier, int):
+        # If this is a valid number assign it
+        if max_tier >= 0:
+            global MAX_DEGREE_TIER
+            MAX_DEGREE_TIER = True
+
+        # Display the change and exit
+        await interaction.followup.send(f"MAX_DEGREE_TIER has been set to {MAX_DEGREE_TIER}", ephemeral=True)
+        return   
+
+    # If no param was changed then simply display the param values
     # Create the embed for displaying the game information, will show 0 if no games are returned
     embedGames = discord.Embed(color = discord.Color.green(), title = 'Bot Settings')
 
@@ -2237,29 +2255,7 @@ async def settings(interaction: discord.Interaction, use_ai: str = ''):
     # Output the embed
     await interaction.followup.send(embed = embedGames, ephemeral=True)
 
-
-
-
-"""
-@tree.command(
-    name='votemvp',
-    description='Vote for the mvp of your match',
-    guild = discord.Object(GUILD))
-async def voteMVP(interaction: discord.Interaction, player: str):
-    await interaction.response.defer(ephemeral=True)
-    asyncio.sleep(1)
-    found_player = check_player(interaction = interaction, discord_username = player)
-    channel = client.get_channel(1207123664168820736)
-    user = interaction.user
-    if found_player:
-        await interaction.followup.send(f'You have voted for {player} to be MVP of the match')
-        await channel.send(f'{user} has voted - MVP: {player}')
-    else:
-        await interaction.followup.send('This player could not be found in the spreadsheet')
-"""
 #endregion COMMANDS
-
-#logging.getLogger('discord.gateway').addFilter(GatewayEventFilter())
 
 #starts the bot
 client.run(TOKEN)
