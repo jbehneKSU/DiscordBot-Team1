@@ -861,20 +861,25 @@ def update_win(lobby, winner):
         cur.close()
         dbconn.close() 
 
+#Method for MVP voting called after a winning team is set
 async def start_vote(interaction: discord.Interaction, gameID: int, winner: str, lobby: int):
     try:
+        # Generate a table name using the unique gameID to store the votes temporarily
         votetable = f"Vote_{gameID}"
 
         # Create the database connection
         dbconn = sqlite3.connect("bot.db")
         cur = dbconn.cursor()
 
+        # Just in case the table exists for some reason, drop it - note table names cannot be parameterized but gameID can only be an integer
         query = f'DROP TABLE IF EXISTS Vote_{gameID}'
         cur.execute(query)
 
-        query = f'CREATE TABLE Vote_{gameID} (gameID int, MVPName varchar(128))'
+        # Create the vote table
+        query = f'CREATE TABLE Vote_{gameID} (gameID int, discordID varchar(128))'
         cur.execute(query)
 
+        # This query will get the 10 players and their team name along with all participants for this game number from Lobby 1
         query = '''
             with gameplayers as (
             SELECT discordID, teamName
@@ -886,7 +891,9 @@ async def start_vote(interaction: discord.Interaction, gameID: int, winner: str,
             WHERE gameID = 
                 (SELECT g2.gameID 
                 FROM Games g1 
-                INNER JOIN Games g2 ON g2.gameDate = g1.gameDate AND g2.gameLobby = 1
+                INNER JOIN Games g2 ON g2.gameDate = g1.gameDate 
+                AND g2.gameNumber = g1.gameNumber
+                AND g2.gameLobby = 1
                 WHERE g1.gameID = ?)
             AND teamName = 'PARTICIPATION')
 
@@ -895,46 +902,100 @@ async def start_vote(interaction: discord.Interaction, gameID: int, winner: str,
             INNER JOIN Player p ON p.discordID = gp.discordID
         '''
 
+        # Run the query and save the results to players
         cur.execute(query, [gameID, gameID])
         players = cur.fetchall()
 
-        # Create the embed
+        # Create the embed to notify voters
         embed = discord.Embed(title=f"MVP Vote - {winner} Team in Lobby #{lobby}", description=f"Vote for the MVP of the match by selecting their name below!", color=discord.Color.gold())
 
-        # Create buttons for each player
+        # Create buttons for each player on the winning team by comparing the player's team to the winner param
         view = discord.ui.View()
         for player in players:
             if player[2] == winner:
                 button = discord.ui.Button(label=player[1], custom_id=f'vote_{player[0]}', style=discord.ButtonStyle.success)
+
+                # Create a button callback method for each button by passing the discordID, view, table name, and gameID
                 button.callback = create_vote_callback(player[0], view, votetable, gameID)
+
+                # Add the button to the view
                 view.add_item(button)
 
         # Send the embed with voting buttons to each player privately
         for player in players:
+##################################################################################################################################################
+#                   TEST CODE            
+##################################################################################################################################################
             if player[0] == 537052038136201248: #This is only for testing purposes and should be removed
+                # Get the player's Discord ID
                 user = await client.fetch_user(player[0])
                 try:
+                    # Send the message as a DM to each voting player
                     message = await user.send(embed=embed, view=view)
 
                     # Start a 5-minute timer for each user to vote
-                    await asyncio.sleep(300)  # 300 seconds = 5 minutes
+                    # await asyncio.sleep(300)  # 300 seconds = 5 minutes
+##################################################################################################################################################
+#                   TEST CODE            
+##################################################################################################################################################                    
+                    await asyncio.sleep(15)  # REPLACE THIS TOO
+                    
+                    # After the time has elapsed the buttons will be disabled
                     for item in view.children:
                         item.disabled = True
+
+                    # Update the message to disable the buttons
                     await message.edit(view=view)
                     
                 except discord.Forbidden:
-                    # Handle the case where DMs are closed
+                    # Handle the case where the player's DMs are closed
                     await client.send(f"Could not send a DM to {player[1]}. They may have DMs disabled.")
+        
+        # At this point the voting period has ended so now we figure out the winner
+        # Query the votetable to get the winner(s) - currently grants all ties an MVP score
+        query = f"""
+            WITH VoteCounts AS (
+                SELECT discordID, COUNT(*) AS VoteCount
+                FROM {votetable}
+                GROUP BY discordID),
+            MaxVotes AS (
+                SELECT MAX(VoteCount) AS MaxVoteCount
+                FROM VoteCounts)
 
-        # Do the vote calculation here
-        # Query the database {votetable} to get the winner(s)
-        # Update the GameDetail with the MVPs
-        # Send a message to the channel who won
+            SELECT vc.discordID, p.riotID
+            FROM VoteCounts vc
+            INNER JOIN Player p ON p.discordID = vc.discordID
+            WHERE VoteCount = (SELECT MaxVoteCount FROM MaxVotes);
+            """
+        
+        # Execute the query and save the results to mvplist
+        cur.execute(query)
+        mvplist = cur.fetchall()
+
+        # Create the embed to display the voted winner(s)
+        mvpembed = discord.Embed(title=f"MVP Winner - {winner} Team in Lobby #{lobby}", description=f"Here are the MVP(s) for this game!", color=discord.Color.gold())
+
+        # Update the GameDetail table with each of the MVPs
+        for mvp in mvplist:
+            query = "UPDATE GameDetail SET MVP = 1 WHERE gameID = ? AND discordID = ?;"
+            cur.execute(query, [gameID, mvp[0]])
+            dbconn.commit()
+
+            # Add the name to the embed
+            mvpembed.add_field(name=mvp[1], value=f"\u200B")
+
+        # Now that voting is complete the table can be dropped
+        query = f"DROP TABLE IF EXISTS {votetable};"
+        cur.execute(query)
+
+        # Send a message to the channel to display MVP winner(s)
+        await interaction.followup.send(embed=mvpembed)
 
     except sqlite3.Error as e:
         print(f"Terminating due to database MVP voting error: {e}")
         return False
 
+#Method that serves as a callback from the voting buttons
 def create_vote_callback(discord_id, view, votetable, gameId):
     async def vote_callback(interaction):
         try:
@@ -942,28 +1003,31 @@ def create_vote_callback(discord_id, view, votetable, gameId):
             dbconn = sqlite3.connect("bot.db")
             cur = dbconn.cursor()
 
+            # Use the values passed by the button click and insert the vote into the table
             query = f"INSERT INTO {votetable} VALUES (?, ?)"
-            cur.execute(query, [gameId,discord_id])
+            cur.execute(query, [gameId, discord_id])
             dbconn.commit()
 
-            # Disable all buttons in the view after a vote is submitted
+            # Disable all buttons in the view after a vote is submitted (no double voting)
             for item in view.children:
                 item.disabled = True
 
-            # Update the message with the modified view
+            # Update the message to disable the buttons
             await interaction.message.edit(view=view)
             
+            # Notify the user their vote has been recorded
             await interaction.response.send_message("Thank you for your vote!", ephemeral=True)
 
         except sqlite3.Error as e:
             print(f"Terminating due to database MVP voting error: {e}")
             return False
 
+    # End the callback
     return vote_callback
 
 #endregion GENERAL METHODS
 
-#region MATCHMAKING
+#region MATCHMAKING METHODS
 
 #Method to assign roles to players based on their preferred priority
 def assign_roles(players):
@@ -1205,7 +1269,7 @@ def create_playerlist(player_users):
         cur.close()
         dbconn.close()    
 
-#endregion MATCHMAKING
+#endregion MATCHMAKING METHODS
 
 # region GOOGLE SHEETS
 
@@ -1836,15 +1900,15 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
         volunteer_users = [member.name for member in volunteer_role.members]
         volunteer_ids = [member.id for member in volunteer_role.members]
 
-    #region TESTCODE
-    ############################################################################################################
-    #   TESTING ONLY
+#region TESTCODE
+############################################################################################################
+#   TESTING ONLY
         player_users = [500012,500028,500001,500008,500015,500002,500018,500026,500027,500030,500042,500044,500014,
             500022,500032,500035,500023,500041,500040,500029]
         
         volunteer_ids = [500031,500020,500037,500007,500011,500017,500039,]
-    ############################################################################################################
-    #endregion TESTCODE
+############################################################################################################
+#endregion TESTCODE
 
         # Ensure an even split of 10 players and end the method if not
         if len(player_users) % 10 != 0:
