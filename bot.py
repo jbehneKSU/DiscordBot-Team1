@@ -484,19 +484,25 @@ def update_riot_rank(interaction: discord.Interaction):
 #Method to return string of preferences for the /preferences embed
 def get_preferences(interaction: discord.Interaction):
     try:
+        # Create the database connection
         dbconn = sqlite3.connect("bot.db")
         cur = dbconn.cursor()
+
+        # Set the default message if no preferences are found (unlikely as a default is set at registration)
         pref = "No existing preferences, use the dropdowns to select:"
 
+        # Query the player's preferences
         query = 'SELECT preferences FROM Player WHERE DiscordID = ?'
         args = (interaction.user.id,)
         cur.execute(query, args)
         result = cur.fetchone()
 
+        # If preferences are found then create the string displaying them and return it
         if result[0] != 0:
             pref = f"Current preferences - Top: {result[0][0]}, Jng: {result[0][1]}, Mid: {result[0][2]}, ADC: {result[0][3]}, Sup: {result[0][4]}" 
 
         return pref
+    
     except sqlite3.Error as e:
         print (f'Database error occurred getting preferences: {e}')
         return e
@@ -507,21 +513,31 @@ def get_preferences(interaction: discord.Interaction):
     
 #Method to save player's preference selection
 def save_preference(interaction: discord.Interaction, value: str):
+    # Position and preference are passed as a single string delimeted by a -
     position = value.split(" - ")[0]
     setpref = value.split(" - ")[1]
+
+    # Get the Discord user that called the update
     member = interaction.user
 
     try:
+        # Create the database connection
         dbconn = sqlite3.connect("bot.db")
         cur = dbconn.cursor()
+
+        # Get the player's current preferences and save to the result param
         query = 'SELECT preferences FROM player WHERE discordID = ?'
         args = (member.id,)
         cur.execute(query, args)
         result = cur.fetchone()
 
+        # Use the position to determine which preference is updated
         match position:
+            # If this is called from the /fill command all preferences default to 4
             case "Fill":
-                newpref = "11111"
+                newpref = "44444"
+
+            # For individual positions, the preference map is updated using the position and new preference joined to the existing preferences
             case "Top":
                 newpref = setpref + result[0][1] + result[0][2] + result[0][3] + result[0][4]
             case "Jng":
@@ -533,6 +549,7 @@ def save_preference(interaction: discord.Interaction, value: str):
             case "Sup":
                 newpref = result[0][0] + result[0][1] + result[0][2] + result[0][3] + setpref
 
+        # Update the Player table with the new preference map
         query = 'UPDATE Player SET Preferences = ? WHERE discordID = ?'
         args = (newpref, member.id,)        
         cur.execute(query, args)
@@ -547,35 +564,45 @@ def save_preference(interaction: discord.Interaction, value: str):
 
 #Method to check if player exists in the database and adds them if not
 def register_player(interaction: discord.Interaction):
+    # Get the discord ID of the user
     member = interaction.user
     
     try:
+        # Create the database connection
         dbconn = sqlite3.connect("bot.db")
         cur = dbconn.cursor()
+
+        # Check if the user's Discord ID exists yet
         query = 'SELECT EXISTS(SELECT discordName FROM player WHERE discordID = ?)'
         args = (member.id,)
         cur.execute(query, args)
         data = cur.fetchone()
 
+        # If the ID does not exist a new entry will be inserted
         if data[0] == 0:
+            # Create the insert - note the rank, tier, tier override, and preferences are set to a default instead of using nulls
             query = "INSERT INTO Player (discordID, discordName, riotID, lolRank, preferences, toxicity) VALUES (?, ?, '', 'unranked', '44444', 0)"
             args = (member.id, member.display_name,)
             cur.execute(query, args)
             dbconn.commit()
 
+            # Returns an n/a for the Riot ID since this is a new user
             return "n/a"
         else:
+            # If the user's Discord ID did exist then get their information from the database
             query = 'SELECT discordName, riotID FROM Player WHERE discordID = ?'
             args = (member.id,)
             cur.execute(query, args)
             result = cur.fetchone()
 
+            # If the stored user name does not match the existing username then it will be updated automatically
             if member.display_name != result[0]:
                 query = "UPDATE Player SET discordName = ? WHERE discordID = ?"
                 args = (member.display_name, member.id,)
                 cur.execute(query, args)
                 dbconn.commit()                
 
+            # Return the user's Riot ID to be displayed
             return str(result[1]).strip()
 
     except sqlite3.Error as e:
@@ -588,6 +615,7 @@ def register_player(interaction: discord.Interaction):
 #Method to create the database and objects if it is not found
 def check_database():
     try:
+        # Create the database connection
         dbconn = sqlite3.connect("bot.db")
         cur = dbconn.cursor()
 
@@ -726,21 +754,29 @@ def check_database():
         dbconn.close()
 
 #Method to add one toxicity point to the player
-def update_toxicity(interaction, discord_username):
+def update_toxicity(interaction, user):
     try:
+        # Create the database connection
         dbconn = sqlite3.connect("bot.db")
         cur = dbconn.cursor()
+
+        # Var to determine if the user passed in exists
         found_user = False
 
-        query = 'SELECT EXISTS(SELECT discordName FROM player WHERE discordName = ?)'
-        args = (discord_username,)
+        # Query to search for player by discordName or riotID
+        query = 'SELECT EXISTS(SELECT discordName FROM player WHERE LOWER(discordName) = ? OR LOWER(riotID) = ?)'
+        args = (user, user)
         cur.execute(query, args)
         data = cur.fetchone()
 
+        # If the player is found we'll update them
         if data[0] != 0:
+            # Set the return var to true since the user was found
             found_user = True
-            query = 'UPDATE Player SET toxicity = toxicity + 1 WHERE discordName = ?'
-            args = (discord_username,)
+
+            # Create the update statement and add a point
+            query = 'UPDATE Player SET toxicity = toxicity + 1 WHERE LOWER(discordName) = ? OR LOWER(riotID) = ?'
+            args = (user, user)
             cur.execute(query, args)
             dbconn.commit()         
 
@@ -752,47 +788,10 @@ def update_toxicity(interaction, discord_username):
     finally:
         cur.close()
         dbconn.close()
-    ## This was a new method to use Google sheets, requires discord_username to be passed
-    # try:
-    #     service = build('sheets', 'v4', credentials=creds)
-    #     range_name = 'A1:J100'
-    #     result = service.spreadsheets().values().get(spreadsheetId=SHEETS_ID, range=range_name).execute()
-    #     values = result.get('values', [])
-    #     found_user = False
-    #     for i, row in enumerate(values, start = 1):
-    #         if discord_username.lower() == row[0].lower() or discord_username.lower() == row[1].lower() :
-    #             newvalue = [[int(row[5]) + 1]]
-    #             body = {'range': 'Points!F' + str(i), 'values': newvalue}                
-    #             update = service.spreadsheets().values().update(
-    #                 spreadsheetId=SHEETS_ID, range='Points!F' + str(i),
-    #                 valueInputOption='RAW', body=body).execute()
-    #             found_user = True
-    #             print('{0} cells updated.'.format(update.get('updatedCells')))                
-    #     return found_user   
-
-    # except HttpError as e:
-    #     print(f'An error occured: {e}')
-    #     return e
     
-    ## This is the old/original method for Google sheets
-    # gs = gspread.oauth()
-    # range_name = 'A1:J100'
-    # sh = gs.open(SHEETS_NAME)
-    # try:
-    #     values = sh.sheet1.get_values(range_name)
-    #     found_user = False
-    #     for i, row in enumerate(values, start = 1):
-    #         if discord_username.lower() == row[0].lower():
-    #             user_toxicity = int(row[5])
-    #             sh.sheet1.update_cell(i, 6, user_toxicity + 1)
-    #             found_user = True
-    #     return found_user   
-    # except HttpError as e:
-    #     (f'An error occured: {e}')
-    #     return e
-
 #Method to update Riot ID
 def update_riotid(interaction: discord.Interaction, id):
+    # Check that the ID looks correct and return a message if not
     if '#' not in id:
         return "Please enter your Riot ID as {gamename}#{tagline}"
     
@@ -1731,19 +1730,20 @@ async def volunteer(interaction):
 # Command to add a point of toxicity to a player
 @tree.command(
         name = 'toxicity',
-        description = 'Give a user a point of toxicity.',
+        description = 'Give a user a point of toxicity, you can use the Discord name or Riot ID.',
         guild = discord.Object(GUILD))
-async def toxicity(interaction: discord.Interaction, discord_username: str):
+async def toxicity(interaction: discord.Interaction, username: str):
     if not is_admin(interaction):
         await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
         return
 
     try:
-        found_user = update_toxicity(interaction, discord_username)
+        # Call the method to update the database and check if it returns a success
+        found_user = update_toxicity(interaction, username.lower())
         if found_user:
-            await interaction.response.send_message(f"{discord_username}'s toxicity point has been updated.")
+            await interaction.response.send_message(f"{username}'s toxicity point has been updated.", ephemeral=True)
         else:
-            await interaction.response.send_message(f"{discord_username} could not be found.")
+            await interaction.response.send_message(f"{username} could not be found.", ephemeral=True)
     except Exception as e:
         print(f'An error occured: {e}')
 
@@ -2175,7 +2175,7 @@ async def activegames(interaction: discord.Interaction):
         cur.close()
         dbconn.close() 
 
-#Command to set preferences to fill (44444 is used)
+#Command to display the export embed with buttons for exporting the database to Sheets
 @tree.command(
         name = 'export',
         description= 'Export database to Google sheets.',
@@ -2213,9 +2213,8 @@ async def settings(interaction: discord.Interaction, use_ai: str = '', random_so
         else:
             USE_AI_MATCHMAKE = False
 
-        # Display the change and exit
+        # Display the change 
         await interaction.followup.send(f"USE_AI_MATCHMAKE has been set to {USE_AI_MATCHMAKE}", ephemeral=True)
-        return        
 
     # Same setup as AI above
     if random_sort != '' and (random_sort.lower() == 'true' or random_sort.lower() == 'false'):
@@ -2228,20 +2227,17 @@ async def settings(interaction: discord.Interaction, use_ai: str = '', random_so
         else:
             USE_RANDOM_SORT = False
 
-        # Display the change and exit
+        # Display the change 
         await interaction.followup.send(f"USE_RANDOM_SORT has been set to {USE_RANDOM_SORT}", ephemeral=True)
-        return               
 
     # Same premise although this is an integer value instead of true/false
-    if max_tier != '' and isinstance(max_tier, int):
+    if max_tier >= 0 and isinstance(max_tier, int):
         # If this is a valid number assign it
-        if max_tier >= 0:
-            global MAX_DEGREE_TIER
-            MAX_DEGREE_TIER = True
+        global MAX_DEGREE_TIER
+        MAX_DEGREE_TIER = max_tier
 
-        # Display the change and exit
+        # Display the change 
         await interaction.followup.send(f"MAX_DEGREE_TIER has been set to {MAX_DEGREE_TIER}", ephemeral=True)
-        return   
 
     # If no param was changed then simply display the param values
     # Create the embed for displaying the game information, will show 0 if no games are returned
