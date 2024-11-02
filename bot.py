@@ -51,7 +51,7 @@ MAX_DEGREE_TIER = 2 #This number is used to determine how far apart in tiers pla
 USE_RANDOM_SORT = True #This determines whether the player list is shuffled or sorted by tier 
 USE_AI_MATCHMAKE = False #This determines whether team formation is done using AI or the Python methods
 MIN_VOTES_REQUIRED = 3 #This is the minimum number of votes needed to declare an MVP winner
-# VOTE_DM = True #This determines whether voting is displayed in the channel or in player's DM (NOT IMPLEMENTED)
+VOTE_DM = True #This determines whether voting is displayed in the channel or in player's DM
 
 # Create credentials object for Google sheets
 credentials = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
@@ -72,8 +72,8 @@ async def on_ready():
     USE_RANDOM_SORT = True #This determines whether the player list is shuffled or sorted by tier 
     global USE_AI_MATCHMAKE
     USE_AI_MATCHMAKE = False #This determines whether team formation is done using AI or the Python methods
-    # global VOTE_DM
-    # VOTE_DM = True #This determines whether voting is displayed in the channel or in player's DM
+    global VOTE_DM
+    VOTE_DM = True #This determines whether voting is displayed in the channel or in player's DM
     global MIN_VOTES_REQUIRED
     MIN_VOTES_REQUIRED = 3 #This is the minimum number of votes needed to declare an MVP winner
 
@@ -993,9 +993,9 @@ def create_vote_callback(discord_id, view, votetable, gameId, players):
     async def vote_callback(interaction):
         try:
             """
-            #######################################################################################################
-            # So this disables voting for the entire channel in its current form, unsure if I can fix this in time.
-            #######################################################################################################
+            #############################################################################################################
+            # This comment disables voting for the entire channel in its current form, unsure if I can fix this in time.
+            #############################################################################################################
             # First check if we are using DM voting, if not then we need to check that this user is a valid voter
             if VOTE_DM == False:
                 # Default to False for the user being allowed to vote
@@ -2233,7 +2233,7 @@ async def export(interaction):
     name = 'settings',
     description = "View and/or change global settings.  Each paramter is optional.",
     guild = discord.Object(GUILD))
-async def settings(interaction: discord.Interaction, use_ai: str = '', random_sort: str = '', max_tier: int = -1, min_votes = -1):
+async def settings(interaction: discord.Interaction, use_ai: str = '', random_sort: str = '', max_tier: int = -1, min_votes: int = -1):
     # This seemed to take longer than expected in testing so better to defer
     await interaction.response.defer(ephemeral=True)
     
