@@ -297,6 +297,19 @@ If a number exists in the "tieroverride" column for a player it will automatical
 
 ## Admin Commands
 Listing of admin only commands and their function
+- check_database method – this is called when the program is started to create the database file and the required objects ​
+- /export - exports data to Google Spreadsheets​
+- /settings - command to allow admins to edit parameters for matchmaking, including using AI, the allowable tier difference between players, and sorting the players by tier vs random​
+- /win - sets the winning team
+- /toxicity - updates toxicity to the database
 
 ## Player Commands
 Listing of player commands and their function
+- /checkin – the check-in button was modified to give the player feedback for updating their profile and ensures the player is registered in the database​
+- /volunteer - allows players to volunteer
+- /players - displays players in the lobby
+- /remove - lets players remove themselves
+- /activegames - shows open games that must be completed before a new game can be created​
+- /riotid - allows the player to update their Riot ID in the database​
+- /fill - allows the player to set their role preference to neutral (all 4's)​
+- /roleselect - displays an embed with dropdowns to allow the player to set their preferences for each position​
