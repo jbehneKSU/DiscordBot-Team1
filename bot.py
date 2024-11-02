@@ -51,6 +51,8 @@ CHALLENGER = os.getenv('challenger')
 MAX_DEGREE_TIER = 2 #This number is used to determine how far apart in tiers players in opposing lanes can be during matchmaking
 USE_RANDOM_SORT = True #This determines whether the player list is shuffled or sorted by tier 
 USE_AI_MATCHMAKE = False #This determines whether team formation is done using AI or the Python methods
+MIN_VOTES_REQUIRED = 3 #This is the minimum number of votes needed to declare an MVP winner
+# VOTE_DM = True #This determines whether voting is displayed in the channel or in player's DM
 
 # Create credentials object for Google sheets
 credentials = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
@@ -71,6 +73,8 @@ async def on_ready():
     USE_RANDOM_SORT = True #This determines whether the player list is shuffled or sorted by tier 
     global USE_AI_MATCHMAKE
     USE_AI_MATCHMAKE = False #This determines whether team formation is done using AI or the Python methods
+    # global VOTE_DM
+    # VOTE_DM = True #This determines whether voting is displayed in the channel or in player's DM
 
     check_database()
     await tree.sync(guild=discord.Object(GUILD))
@@ -896,7 +900,7 @@ async def start_vote(interaction: discord.Interaction, gameID: int, winner: str,
         view = discord.ui.View()
         for player in players:
             if player[2] == winner:
-                button = discord.ui.Button(label=player[1], custom_id=f'vote_{player[0]}', style=discord.ButtonStyle.success)
+                button = discord.ui.Button(label=player[1], custom_id=f'vote_{player[0]}', style=discord.ButtonStyle.success, disabled=True)
 
                 # Create a button callback method for each button by passing the discordID, view, table name, and gameID
                 button.callback = create_vote_callback(player[0], view, votetable, gameID)
@@ -921,7 +925,7 @@ async def start_vote(interaction: discord.Interaction, gameID: int, winner: str,
     ##################################################################################################################################################
     #                   TEST CODE            
     ##################################################################################################################################################                    
-                    await asyncio.sleep(15)  # REPLACE THIS TOO
+                    await asyncio.sleep(30)  # REPLACE THIS TOO
                     
                     # After the time has elapsed the buttons will be disabled
                     for item in view.children:
@@ -936,6 +940,7 @@ async def start_vote(interaction: discord.Interaction, gameID: int, winner: str,
         
         # At this point the voting period has ended so now we figure out the winner
         # Query the votetable to get the winner(s) - currently grants all ties an MVP score
+        # The global MIN_VOTES_REQUIRED determines the minimum votes to allow a winner
         query = f"""
             WITH VoteCounts AS (
                 SELECT discordID, COUNT(*) AS VoteCount
@@ -943,7 +948,8 @@ async def start_vote(interaction: discord.Interaction, gameID: int, winner: str,
                 GROUP BY discordID),
             MaxVotes AS (
                 SELECT MAX(VoteCount) AS MaxVoteCount
-                FROM VoteCounts)
+                FROM VoteCounts
+                WHERE VoteCount >= ?)
 
             SELECT vc.discordID, p.riotID
             FROM VoteCounts vc
@@ -952,20 +958,25 @@ async def start_vote(interaction: discord.Interaction, gameID: int, winner: str,
             """
         
         # Execute the query and save the results to mvplist
-        cur.execute(query)
+        cur.execute(query, [MIN_VOTES_REQUIRED])
         mvplist = cur.fetchall()
 
-        # Create the embed to display the voted winner(s)
-        mvpembed = discord.Embed(title=f"MVP Winner - {winner} Team in Lobby #{lobby}", description=f"Here are the MVP(s) for this game!", color=discord.Color.gold())
+        # Make sure someone won MVP, if not create an embed announce no winner was chosen
+        if len(mvplist) == 0:
+            mvpembed = discord.Embed(title=f"MVP Winner - {winner} Team in Lobby #{lobby}", description=f"No player won MVP this round!", color=discord.Color.gold())
 
-        # Update the GameDetail table with each of the MVPs
-        for mvp in mvplist:
-            query = "UPDATE GameDetail SET MVP = 1 WHERE gameID = ? AND discordID = ?;"
-            cur.execute(query, [gameID, mvp[0]])
-            dbconn.commit()
+        else:
+            # Create the embed to display the voted winner(s)
+            mvpembed = discord.Embed(title=f"MVP Winner - {winner} Team in Lobby #{lobby}", description=f"Here are the MVP(s) for this game!", color=discord.Color.gold())
 
-            # Add the name to the embed
-            mvpembed.add_field(name=mvp[1], value=f"\u200B")
+            # Update the GameDetail table with each of the MVPs
+            for mvp in mvplist:
+                query = "UPDATE GameDetail SET MVP = 1 WHERE gameID = ? AND discordID = ?;"
+                cur.execute(query, [gameID, mvp[0]])
+                dbconn.commit()
+
+                # Add the name to the embed
+                mvpembed.add_field(name=mvp[1], value=f"\u200B")
 
         # Now that voting is complete the table can be dropped
         query = f"DROP TABLE IF EXISTS {votetable};"
@@ -2191,7 +2202,7 @@ async def export(interaction):
 #Slash command to see and change admin settings
 @tree.command(
     name = 'settings',
-    description = "Testing placeholder for viewing and changing settings",
+    description = "View and/or change global settings that affect matchmaking",
     guild = discord.Object(GUILD))
 async def settings(interaction: discord.Interaction, use_ai: str = '', random_sort: str = '', max_tier: int = -1):
     # This seemed to take longer than expected in testing so better to defer
@@ -2250,6 +2261,14 @@ async def settings(interaction: discord.Interaction, use_ai: str = '', random_so
 
     # Output the embed
     await interaction.followup.send(embed = embedGames, ephemeral=True)
+
+@tree.command(
+    name = 'users',
+    description = "Display information on all logged in users",
+    guild = discord.Object(GUILD))
+async def users(interaction: discord.Interaction):
+    return
+
 
 #endregion COMMANDS
 
