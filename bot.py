@@ -26,7 +26,6 @@ tree = app_commands.CommandTree(client)
 TOKEN = os.getenv('BOT_TOKEN') #Gets the bot's password token from the .env file and sets it to TOKEN.
 GUILD = os.getenv('GUILD_ID') #Gets the server's id from the .env file and sets it to GUILD.
 SHEETS_ID = os.getenv('GOOGLE_SHEETS_ID') #Gets the Google Sheets ID from the .env file and sets it to SHEETS_ID.
-# SHEETS_NAME = os.getenv('GOOGLE_SHEETS_NAME') #Gets the google sheets name from the .env and sets it to SHEETS_NAME
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets'] #Allows the app to read and write to the google sheet.
 SERVICE_ACCOUNT_FILE = 'token.json' #Location of Google Sheets credential file
 RIOT_API_KEY = os.getenv('RIOT_API_KEY') #Gets the Riot API Key from the .env and sets it to RIOT_API_KEY
@@ -52,7 +51,7 @@ MAX_DEGREE_TIER = 2 #This number is used to determine how far apart in tiers pla
 USE_RANDOM_SORT = True #This determines whether the player list is shuffled or sorted by tier 
 USE_AI_MATCHMAKE = False #This determines whether team formation is done using AI or the Python methods
 MIN_VOTES_REQUIRED = 3 #This is the minimum number of votes needed to declare an MVP winner
-# VOTE_DM = True #This determines whether voting is displayed in the channel or in player's DM
+# VOTE_DM = True #This determines whether voting is displayed in the channel or in player's DM (NOT IMPLEMENTED)
 
 # Create credentials object for Google sheets
 credentials = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
@@ -75,6 +74,8 @@ async def on_ready():
     USE_AI_MATCHMAKE = False #This determines whether team formation is done using AI or the Python methods
     # global VOTE_DM
     # VOTE_DM = True #This determines whether voting is displayed in the channel or in player's DM
+    global MIN_VOTES_REQUIRED
+    MIN_VOTES_REQUIRED = 3 #This is the minimum number of votes needed to declare an MVP winner
 
     check_database()
     await tree.sync(guild=discord.Object(GUILD))
@@ -900,44 +901,42 @@ async def start_vote(interaction: discord.Interaction, gameID: int, winner: str,
         view = discord.ui.View()
         for player in players:
             if player[2] == winner:
-                button = discord.ui.Button(label=player[1], custom_id=f'vote_{player[0]}', style=discord.ButtonStyle.success, disabled=True)
+                button = discord.ui.Button(label=player[1], custom_id=f'vote_{player[0]}', style=discord.ButtonStyle.success)
 
-                # Create a button callback method for each button by passing the discordID, view, table name, and gameID
-                button.callback = create_vote_callback(player[0], view, votetable, gameID)
+                # Create a button callback method for each button by passing the discordID, view, table name, gameID, and players list
+                button.callback = create_vote_callback(player[0], view, votetable, gameID, players)
 
                 # Add the button to the view
                 view.add_item(button)
 
-        # Send the embed with voting buttons to each player privately
-        for player in players:
-    ##################################################################################################################################################
-    #                   TEST CODE            
-    ##################################################################################################################################################
-            if player[0] == 537052038136201248: #This is only for testing purposes and should be removed
+        # If the global parm for voting to be sent via DM is True then loop through the players and DM them
+        if VOTE_DM:
+            # Send the embed with voting buttons to each player privately in a DM
+            for player in players:
                 # Get the player's Discord ID
                 user = await client.fetch_user(player[0])
                 try:
                     # Send the message as a DM to each voting player
                     message = await user.send(embed=embed, view=view)
-
-                    # Start a 5-minute timer for each user to vote
-                    # await asyncio.sleep(300)  # 300 seconds = 5 minutes
-    ##################################################################################################################################################
-    #                   TEST CODE            
-    ##################################################################################################################################################                    
-                    await asyncio.sleep(30)  # REPLACE THIS TOO
-                    
-                    # After the time has elapsed the buttons will be disabled
-                    for item in view.children:
-                        item.disabled = True
-
-                    # Update the message to disable the buttons
-                    await message.edit(view=view)
                     
                 except discord.Forbidden:
                     # Handle the case where the player's DMs are closed
                     await client.send(f"Could not send a DM to {player[1]}. They may have DMs disabled.")
         
+        # # Otherwise send the voting buttons to the channel and the callback will determine if they are allowed to vote
+        # else:
+        #     await interaction.followup.send(embed=embed, view=view)
+
+        # Start a 5-minute timer for each user to vote
+        await asyncio.sleep(300)  # 300 seconds = 5 minutes
+        
+        # After the time has elapsed the buttons will be disabled
+        for item in view.children:
+            item.disabled = True
+
+        # Update the message to disable the buttons
+        await message.edit(view=view)
+
         # At this point the voting period has ended so now we figure out the winner
         # Query the votetable to get the winner(s) - currently grants all ties an MVP score
         # The global MIN_VOTES_REQUIRED determines the minimum votes to allow a winner
@@ -990,9 +989,39 @@ async def start_vote(interaction: discord.Interaction, gameID: int, winner: str,
         return False
 
 #Method that serves as a callback from the voting buttons
-def create_vote_callback(discord_id, view, votetable, gameId):
+def create_vote_callback(discord_id, view, votetable, gameId, players):
     async def vote_callback(interaction):
         try:
+            """
+            #######################################################################################################
+            # So this disables voting for the entire channel in its current form, unsure if I can fix this in time.
+            #######################################################################################################
+            # First check if we are using DM voting, if not then we need to check that this user is a valid voter
+            if VOTE_DM == False:
+                # Default to False for the user being allowed to vote
+                allowed_vote = False
+
+                # Loop through the players list that was sent
+                for player in players:
+                    # If the user who clicked the button is in the list then the allowed vote is set to True
+                    if interaction.user.id == player[0]:
+                        allowed_vote = True
+
+                # After the loop, if the user was not set to be allowed to vote a message will be sent and the callback ends
+                if allowed_vote == False:
+                    # Disable all buttons in the view since this is not valid
+                    for item in view.children:
+                        item.disabled = True
+
+                    # Update the message to disable the buttons
+                    await interaction.message.edit(view=view)    
+
+                    # Inform the user they cannot vote                
+                    await interaction.response.send_message("Sorry, you are now allowed to vote for this match.", ephemeral=True)
+                    return
+            """
+            # At this point the user is valid, either due to DM or they were checked through the channel
+
             # Create the database connection
             dbconn = sqlite3.connect("bot.db")
             cur = dbconn.cursor()
@@ -2202,9 +2231,9 @@ async def export(interaction):
 #Slash command to see and change admin settings
 @tree.command(
     name = 'settings',
-    description = "View and/or change global settings that affect matchmaking",
+    description = "View and/or change global settings.  Each paramter is optional.",
     guild = discord.Object(GUILD))
-async def settings(interaction: discord.Interaction, use_ai: str = '', random_sort: str = '', max_tier: int = -1):
+async def settings(interaction: discord.Interaction, use_ai: str = '', random_sort: str = '', max_tier: int = -1, min_votes = -1):
     # This seemed to take longer than expected in testing so better to defer
     await interaction.response.defer(ephemeral=True)
     
@@ -2219,7 +2248,7 @@ async def settings(interaction: discord.Interaction, use_ai: str = '', random_so
         if use_ai.lower() == 'true':
             global USE_AI_MATCHMAKE
             USE_AI_MATCHMAKE = True
-        
+
         # Otherwise it had to be false
         else:
             USE_AI_MATCHMAKE = False
@@ -2241,6 +2270,20 @@ async def settings(interaction: discord.Interaction, use_ai: str = '', random_so
         # Display the change 
         await interaction.followup.send(f"USE_RANDOM_SORT has been set to {USE_RANDOM_SORT}", ephemeral=True)
 
+    # # Same setup as AI above
+    # if vote_dm != '' and (vote_dm.lower() == 'true' or vote_dm.lower() == 'false'):
+    #     # If true then set it to true
+    #     if vote_dm.lower() == 'true':
+    #         global VOTE_DM
+    #         VOTE_DM = True
+        
+    #     # Otherwise it had to be false
+    #     else:
+    #         VOTE_DM = False
+
+    #     # Display the change 
+    #     await interaction.followup.send(f"VOTE_DM has been set to {VOTE_DM}", ephemeral=True)
+
     # Same premise although this is an integer value instead of true/false
     if max_tier >= 0 and isinstance(max_tier, int):
         # If this is a valid number assign it
@@ -2250,17 +2293,29 @@ async def settings(interaction: discord.Interaction, use_ai: str = '', random_so
         # Display the change 
         await interaction.followup.send(f"MAX_DEGREE_TIER has been set to {MAX_DEGREE_TIER}", ephemeral=True)
 
+    # Same premise although this is an integer value instead of true/false
+    if min_votes >= 0 and isinstance(min_votes, int):
+        # If this is a valid number assign it
+        global MIN_VOTES_REQUIRED
+        MIN_VOTES_REQUIRED = min_votes
+
+        # Display the change 
+        await interaction.followup.send(f"MIN_VOTES_REQUIRED has been set to {MIN_VOTES_REQUIRED}", ephemeral=True)
+
     # If no param was changed then simply display the param values
     # Create the embed for displaying the game information, will show 0 if no games are returned
     embedGames = discord.Embed(color = discord.Color.green(), title = 'Bot Settings')
 
     # Loop the data returned and add a line for each active game to the embed
-    embedGames.add_field(name = 'USE_AI_MATCHMAKE', value = f"{USE_AI_MATCHMAKE}")
-    embedGames.add_field(name = 'MAX_DEGREE_TIER', value = f"{MAX_DEGREE_TIER}")
-    embedGames.add_field(name = 'USE_RANDOM_SORT', value = f"{USE_RANDOM_SORT}")
+    embedGames.add_field(name = 'USE_AI_MATCHMAKE', value = f"{USE_AI_MATCHMAKE}", inline=False)
+    embedGames.add_field(name = 'MAX_DEGREE_TIER', value = f"{MAX_DEGREE_TIER}", inline=False)
+    embedGames.add_field(name = 'USE_RANDOM_SORT', value = f"{USE_RANDOM_SORT}", inline=False)
+    # embedGames.add_field(name = 'VOTE_DM', value = f"{VOTE_DM}", inline=False)
+    embedGames.add_field(name = 'MIN_VOTES_REQUIRED', value = f"{MIN_VOTES_REQUIRED}", inline=False)
 
     # Output the embed
     await interaction.followup.send(embed = embedGames, ephemeral=True)
+
 
 @tree.command(
     name = 'users',
@@ -2269,6 +2324,16 @@ async def settings(interaction: discord.Interaction, use_ai: str = '', random_so
 async def users(interaction: discord.Interaction):
     return
 
+
+@tree.command(
+    name = 'cleargamedata',
+    description = "Clears the game data from the database",
+    guild = discord.Object(GUILD))
+async def cleargamedata(interaction: discord.Interaction, reassurance: str):
+    if reassurance != "I KNOW WHAT I AM DOING":
+        return
+    
+    return
 
 #endregion COMMANDS
 
