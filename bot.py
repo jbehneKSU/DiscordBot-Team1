@@ -1,6 +1,7 @@
 import asyncio
 import discord
 import os
+import shutil
 from dotenv import load_dotenv, find_dotenv
 from discord import app_commands
 from discord.utils import get
@@ -9,6 +10,7 @@ from googleapiclient.discovery import build
 import google.generativeai as genai
 import csv, io, json
 from datetime import datetime
+import time
 import sqlite3
 import random
 import itertools
@@ -922,7 +924,7 @@ async def start_vote(interaction: discord.Interaction, gameID: int, winner: str,
                 except discord.Forbidden:
                     # Handle the case where the player's DMs are closed
                     await client.send(f"Could not send a DM to {player[1]}. They may have DMs disabled.")
-        
+                
         # # Otherwise send the voting buttons to the channel and the callback will determine if they are allowed to vote
         # else:
         #     await interaction.followup.send(embed=embed, view=view)
@@ -2327,13 +2329,50 @@ async def users(interaction: discord.Interaction):
 
 @tree.command(
     name = 'cleargamedata',
-    description = "Clears the game data from the database",
+    description = "Clears the game data from the database, enter I KNOW WHAT I AM DOING (all caps) to proceed.",
     guild = discord.Object(GUILD))
 async def cleargamedata(interaction: discord.Interaction, reassurance: str):
-    if reassurance != "I KNOW WHAT I AM DOING":
+    if not is_admin(interaction):
+        await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
         return
-    
-    return
+        
+    if reassurance == "I KNOW WHAT I AM DOING":
+        shutil.copyfile("bot.db", "BACKUP_bot_" + time.strftime("%Y%m%d-%H%M%S") + ".db")
+
+
+    try:
+        # Create database connection
+        dbconn = sqlite3.connect("bot.db")
+        cur = dbconn.cursor()
+
+        # Delete all the game detail data
+        query = f"DELETE FROM GameDetail;"
+        cur.execute(query)
+        dbconn.commit()
+
+        # Delete the game data
+        query = f"DELETE FROM Games;"
+        cur.execute(query)
+        dbconn.commit()        
+
+        # Reset the GameID sequence
+        query = f"DELETE FROM sqlite_sequence where name='Games';"
+        cur.execute(query)
+        dbconn.commit()             
+
+        # Output the embed
+        await interaction.response.send_message("Game data has been removed and a backup database was created.", ephemeral=True)
+        
+    # Catch sql errors, print to console and output message to Discord
+    except sqlite3.Error as e:
+        print(f"Terminating due to database clear error: {e}")
+        await interaction.response.send_message(f"Failed due to database error {e}", ephemeral=True)
+
+    finally:
+        cur.close()
+        dbconn.close() 
+        return
+
 
 #endregion COMMANDS
 
