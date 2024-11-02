@@ -296,20 +296,22 @@ LEFT OUTER JOIN vw_TierModifier mod ON mod.discordID = Player.discordID
 If a number exists in the "tieroverride" column for a player it will automatically override all calculations, including the win modifier.
 
 ## Admin Commands
-Listing of admin only commands and their function
-- check_database method – this is called when the program is started to create the database file and the required objects ​
+Listing of admin only commands and their usage
 - /export - exports data to Google Spreadsheets​
 - /settings - command to allow admins to edit parameters for matchmaking, including using AI, the allowable tier difference between players, and sorting the players by tier vs random​
 - /win - sets the winning team
 - /toxicity - updates toxicity to the database
-
-## Player Commands
-Listing of player commands and their function
 - /checkin – the check-in button was modified to give the player feedback for updating their profile and ensures the player is registered in the database​
 - /volunteer - allows players to volunteer
 - /players - displays players in the lobby
 - /remove - lets players remove themselves
 - /activegames - shows open games that must be completed before a new game can be created​
+
+## Player Commands
+Listing of player commands and their usage
 - /riotid - allows the player to update their Riot ID in the database​
 - /fill - allows the player to set their role preference to neutral (all 4's)​
 - /roleselect - displays an embed with dropdowns to allow the player to set their preferences for each position​
+
+## Known issues / Incomplete code
+1.  MVP voting that allows the vote to take place in the channel is commented out currently.  The issue is disabling the buttons in the embed is channel wide, this is how multiple voting is blocked so there will need to be additional logic to make sure the buttons stay enabled AND prevent multiple votes.
