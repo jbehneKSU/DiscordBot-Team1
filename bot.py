@@ -2318,60 +2318,114 @@ async def settings(interaction: discord.Interaction, use_ai: str = '', random_so
     # Output the embed
     await interaction.followup.send(embed = embedGames, ephemeral=True)
 
-
+# Slash command to quickly see a user's info from the database
 @tree.command(
-    name = 'users',
-    description = "Display information on all logged in users",
+    name = 'showuser',
+    description = "Display information for a specified user.",
     guild = discord.Object(GUILD))
-async def users(interaction: discord.Interaction):
-    return
-
-
-@tree.command(
-    name = 'cleargamedata',
-    description = "Clears the game data from the database, enter I KNOW WHAT I AM DOING (all caps) to proceed.",
-    guild = discord.Object(GUILD))
-async def cleargamedata(interaction: discord.Interaction, reassurance: str):
+async def showuser(interaction: discord.Interaction, user_name: str):
+    # Admin only command
     if not is_admin(interaction):
         await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
         return
-        
-    if reassurance == "I KNOW WHAT I AM DOING":
-        shutil.copyfile("bot.db", "BACKUP_bot_" + time.strftime("%Y%m%d-%H%M%S") + ".db")
-
 
     try:
         # Create database connection
         dbconn = sqlite3.connect("bot.db")
         cur = dbconn.cursor()
 
-        # Delete all the game detail data
-        query = f"DELETE FROM GameDetail;"
-        cur.execute(query)
-        dbconn.commit()
+        # Search for the player by Riot ID or by their Discord Name
+        query = f"""
+            SELECT discordName, p.riotID, lolRank, toxicity, Tier, tieroverride
+            FROM Player p
+            INNER JOIN vw_Player vp ON vp.discordID = p.discordID
+            WHERE LOWER(discordName) = ? OR LOWER(p.riotID) = ?
+            """
+        cur.execute(query, [user_name.lower(), user_name.lower()])
+        player = cur.fetchone()
 
-        # Delete the game data
-        query = f"DELETE FROM Games;"
-        cur.execute(query)
-        dbconn.commit()        
-
-        # Reset the GameID sequence
-        query = f"DELETE FROM sqlite_sequence where name='Games';"
-        cur.execute(query)
-        dbconn.commit()             
-
-        # Output the embed
-        await interaction.response.send_message("Game data has been removed and a backup database was created.", ephemeral=True)
+        if player == None:
+            await interaction.response.send_message(f"{user_name} was not found in the database.", ephemeral=True)
         
+        else:
+            # Create the embed for displaying the game information, will show 0 if no games are returned
+            embedGames = discord.Embed(color = discord.Color.green(), title = 'Player Results: ' + user_name)
+
+            # Loop the data returned and add a line for each active game to the embed
+            embedGames.add_field(name = 'Discord Name', value = player[0], inline=False)
+            embedGames.add_field(name = 'Riot ID', value = player[1], inline=False)
+            embedGames.add_field(name = 'League Rank', value = player[2], inline=False)
+            embedGames.add_field(name = 'Toxicity', value = player[3], inline=False)
+            embedGames.add_field(name = 'Calculated Tier', value = player[4], inline=False)
+            embedGames.add_field(name = 'Tier Override Value (Overrides Calculated Value)', value = player[5], inline=False)
+
+            # Output the embed
+            await interaction.response.send_message(embed = embedGames, ephemeral=True)
+
     # Catch sql errors, print to console and output message to Discord
     except sqlite3.Error as e:
-        print(f"Terminating due to database clear error: {e}")
-        await interaction.response.send_message(f"Failed due to database error {e}", ephemeral=True)
+        print(f"Terminating due to database show user error: {e}")
 
     finally:
         cur.close()
         dbconn.close() 
         return
+
+#Slash command to delete all game data while preserving user data
+@tree.command(
+    name = 'cleargamedata',
+    description = "Clears the game data from the database, enter I KNOW WHAT I AM DOING (all caps) to proceed.",
+    guild = discord.Object(GUILD))
+async def cleargamedata(interaction: discord.Interaction, reassurance: str):
+    # Admin only command
+    if not is_admin(interaction):
+        await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
+        return
+    
+    # Case sensitive - check that the user really intends to do this
+    if reassurance == "I KNOW WHAT I AM DOING":
+        # Create a backup copy of the database in the event of an OOPSIE DOODLES
+        shutil.copyfile("bot.db", "BACKUP_bot_" + time.strftime("%Y%m%d-%H%M%S") + ".db")
+
+        try:
+            # Create database connection
+            dbconn = sqlite3.connect("bot.db")
+            cur = dbconn.cursor()
+
+            # Delete all the game detail data
+            query = f"DELETE FROM GameDetail;"
+            cur.execute(query)
+            dbconn.commit()
+
+            # Delete the game data
+            query = f"DELETE FROM Games;"
+            cur.execute(query)
+            dbconn.commit()        
+
+            # Reset the GameID sequence
+            query = f"DELETE FROM sqlite_sequence where name='Games';"
+            cur.execute(query)
+            dbconn.commit()             
+
+            # Reset all player's toxicity
+            query = f"UPDATE Player SET toxicity = 0;"
+            cur.execute(query)
+            dbconn.commit()    
+
+            # Output the embed
+            await interaction.response.send_message("Game data has been removed and a backup database was created.", ephemeral=True)
+            
+        # Catch sql errors, print to console and output message to Discord
+        except sqlite3.Error as e:
+            print(f"Terminating due to database clear error: {e}")
+            await interaction.response.send_message(f"Failed due to database error {e}", ephemeral=True)
+
+        finally:
+            cur.close()
+            dbconn.close() 
+            return
+
+
 
 
 #endregion COMMANDS
