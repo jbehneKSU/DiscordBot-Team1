@@ -67,17 +67,17 @@ genai.configure(api_key=GEMINI_API_KEY)
 # on_ready event for script startup
 @client.event
 async def on_ready():
-    # Global variables set at startup and can be changed via commands
+    # Assign global to changeable variables set at startup, can be changed via /settings command, this step is required
     global MAX_DEGREE_TIER
-    MAX_DEGREE_TIER = 2 #This number is used to determine how far apart in tiers players in opposing lanes can be during matchmaking
+    MAX_DEGREE_TIER = MAX_DEGREE_TIER
     global USE_RANDOM_SORT
-    USE_RANDOM_SORT = True #This determines whether the player list is shuffled or sorted by tier 
+    USE_RANDOM_SORT = USE_RANDOM_SORT
     global USE_AI_MATCHMAKE
-    USE_AI_MATCHMAKE = False #This determines whether team formation is done using AI or the Python methods
+    USE_AI_MATCHMAKE = USE_AI_MATCHMAKE
     global VOTE_DM
-    VOTE_DM = True #This determines whether voting is displayed in the channel or in player's DM
+    VOTE_DM = VOTE_DM
     global MIN_VOTES_REQUIRED
-    MIN_VOTES_REQUIRED = 3 #This is the minimum number of votes needed to declare an MVP winner
+    MIN_VOTES_REQUIRED = MIN_VOTES_REQUIRED 
 
     check_database()
     await tree.sync(guild=discord.Object(GUILD))
