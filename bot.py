@@ -2323,7 +2323,7 @@ async def settings(interaction: discord.Interaction, use_ai: str = '', random_so
     name = 'showuser',
     description = "Display information for a specified user.",
     guild = discord.Object(GUILD))
-async def showuser(interaction: discord.Interaction, user_name: str):
+async def showuser(interaction: discord.Interaction, username: str):
     # Admin only command
     if not is_admin(interaction):
         await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
@@ -2341,26 +2341,27 @@ async def showuser(interaction: discord.Interaction, user_name: str):
             INNER JOIN vw_Player vp ON vp.discordID = p.discordID
             WHERE LOWER(discordName) = ? OR LOWER(p.riotID) = ?
             """
-        cur.execute(query, [user_name.lower(), user_name.lower()])
+        cur.execute(query, [username.lower(), username.lower()])
         player = cur.fetchone()
 
+        # If the player is not found then return a message
         if player == None:
-            await interaction.response.send_message(f"{user_name} was not found in the database.", ephemeral=True)
+            await interaction.response.send_message(f"{username} was not found in the database.", ephemeral=True)
         
         else:
-            # Create the embed for displaying the game information, will show 0 if no games are returned
-            embedGames = discord.Embed(color = discord.Color.green(), title = 'Player Results: ' + user_name)
+            # Create the embed for displaying the player information
+            embedPlayer = discord.Embed(color = discord.Color.green(), title = 'Player Results: ' + username)
 
             # Loop the data returned and add a line for each active game to the embed
-            embedGames.add_field(name = 'Discord Name', value = player[0], inline=False)
-            embedGames.add_field(name = 'Riot ID', value = player[1], inline=False)
-            embedGames.add_field(name = 'League Rank', value = player[2], inline=False)
-            embedGames.add_field(name = 'Toxicity', value = player[3], inline=False)
-            embedGames.add_field(name = 'Calculated Tier', value = player[4], inline=False)
-            embedGames.add_field(name = 'Tier Override Value (Overrides Calculated Value)', value = player[5], inline=False)
+            embedPlayer.add_field(name = 'Discord Name', value = player[0], inline=False)
+            embedPlayer.add_field(name = 'Riot ID', value = player[1], inline=False)
+            embedPlayer.add_field(name = 'League Rank', value = player[2], inline=False)
+            embedPlayer.add_field(name = 'Toxicity', value = player[3], inline=False)
+            embedPlayer.add_field(name = 'Calculated Tier', value = player[4], inline=False)
+            embedPlayer.add_field(name = 'Tier Override Value (Overrides Calculated Value)', value = player[5], inline=False)
 
             # Output the embed
-            await interaction.response.send_message(embed = embedGames, ephemeral=True)
+            await interaction.response.send_message(embed = embedPlayer, ephemeral=True)
 
     # Catch sql errors, print to console and output message to Discord
     except sqlite3.Error as e:
@@ -2425,6 +2426,67 @@ async def cleargamedata(interaction: discord.Interaction, reassurance: str):
             dbconn.close() 
             return
 
+#Slash command to delete all game data while preserving user data
+@tree.command(
+    name = 'setplayertier',
+    description = "Set's a specified player's tier to a static number to override their calculated tier.",
+    guild = discord.Object(GUILD))
+async def setplayertier(interaction: discord.Interaction, username: str, tier: int):
+    # Admin only command
+    if not is_admin(interaction):
+        await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
+        return
+    
+    if tier < 1:
+        await interaction.response.send_message("Tier should be 1 or more.", ephemeral=True)
+        return
+    
+    try:
+        # Create database connection
+        dbconn = sqlite3.connect("bot.db")
+        cur = dbconn.cursor()
+
+        # Search for the player by Riot ID or by their Discord Name
+        query = f"""
+            SELECT discordName, Tier, tieroverride
+            FROM Player p
+            INNER JOIN vw_Player vp ON vp.discordID = p.discordID
+            WHERE LOWER(discordName) = ? OR LOWER(p.riotID) = ?
+            """
+        cur.execute(query, [username.lower(), username.lower()])
+        player = cur.fetchone()
+
+        # If the player is not found then return a message
+        if player == None:
+            await interaction.response.send_message(f"{username} was not found in the database.", ephemeral=True)
+        
+        else:
+            # Query to save the change
+            query = """
+                UPDATE PLAYER SET tieroverride = ?
+                WHERE LOWER(discordName) = ? OR LOWER(riotID) = ?
+                """
+            cur.execute(query, [tier, username.lower(), username.lower()])
+            dbconn.commit()
+
+            # Create the embed for displaying the change
+            embedTier = discord.Embed(color = discord.Color.green(), title = 'Player Tier: ' + username)
+            embedTier.add_field(name = 'Old override tier', value = player[2], inline=False)
+            embedTier.add_field(name = 'Old calculated tier', value = player[1], inline=False)
+            embedTier.add_field(name = 'New override tier', value = tier, inline=False)
+
+            # Output the embed
+            await interaction.response.send_message(embed=embedTier, ephemeral=True)
+        
+    # Catch sql errors, print to console and output message to Discord
+    except sqlite3.Error as e:
+        print(f"Terminating due to database clear error: {e}")
+        await interaction.response.send_message(f"Failed due to database error {e}", ephemeral=True)
+
+    finally:
+        cur.close()
+        dbconn.close() 
+        return
 
 
 
