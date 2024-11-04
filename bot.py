@@ -53,7 +53,7 @@ MAX_DEGREE_TIER = 2 #This number is used to determine how far apart in tiers pla
 USE_RANDOM_SORT = True #This determines whether the player list is shuffled or sorted by tier 
 USE_AI_MATCHMAKE = False #This determines whether team formation is done using AI or the Python methods
 MIN_VOTES_REQUIRED = 3 #This is the minimum number of votes needed to declare an MVP winner
-VOTE_DM = True #This determines whether voting is displayed in the channel or in player's DM
+VOTE_DM = False #This determines whether voting is displayed in the channel or in player's DM
 
 # Create credentials object for Google sheets
 credentials = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
@@ -633,9 +633,16 @@ def check_database():
         # Triggers cannot be created with a IF NOT EXISTS so we will try to drop it and create it each run
         cur.execute("DROP TRIGGER IF EXISTS RankChangeTrigger")
 
-        # Now create all objects
+        # Create a table to track if a user has voted for MVP in a certain game
+        cur.execute("CREATE TABLE IF NOT EXISTS Voted (discordID bigint, gameID int);")
+
+        # Clear data to keep the table trimmed
+        cur.execute("DELETE FROM Voted;")
+
+        # Create the tier mapping table
         cur.execute("CREATE TABLE TierMapping (lolRank varchar(64), tier int);")
 
+        # Create the Player table
         cur.execute("""CREATE TABLE IF NOT EXISTS Player (
             discordID bigint PRIMARY KEY     	-- Unique Discord identifier for the player, will serve as PK
             , discordName nvarchar(64)			-- Player's Discord name
@@ -646,6 +653,7 @@ def check_database():
             , tieroverride int                  -- Used by admins to override player's tier score, 0 uses calculated value
             );""")
         
+        # Create the Games table
         cur.execute("""CREATE TABLE IF NOT EXISTS Games (
             gameID INTEGER PRIMARY KEY AUTOINCREMENT	    -- Unique ID to identify the game
             , gameDate date						-- Date of the game
@@ -655,6 +663,7 @@ def check_database():
             , isComplete bit                    -- Used to track incomplete games
             );""")
 
+        # Create the GameDetail table
         cur.execute("""CREATE TABLE IF NOT EXISTS GameDetail (
             gameID int NOT NULL			-- Game ID joining back to the Games table
             , discordID bigint NOT NULL	-- Player ID joining back to the Player table
@@ -665,6 +674,7 @@ def check_database():
             , FOREIGN KEY (discordID) REFERENCES Player (discordID)
             );""")
         
+        # Create the RankHistory table
         cur.execute("""CREATE TABLE  IF NOT EXISTS RankHistory (
             discordID bigint        -- Player ID joining back to the Player table 
             , changedate date       -- Date the player's rank changed
@@ -673,6 +683,7 @@ def check_database():
             , FOREIGN KEY (discordID) REFERENCES Player (discordID)
             );""")
 
+        # Create the trigger to log when a player's rank changes
         cur.execute("""CREATE TRIGGER RankChangeTrigger
             AFTER UPDATE ON Player
             FOR EACH ROW
@@ -683,6 +694,7 @@ def check_database():
                 WHERE NEW.lolRank <> OLD.lolRank;
             END;""")
 
+        # Create the view to calculate players' points
         cur.execute("""CREATE VIEW IF NOT EXISTS vw_Points AS
             WITH totals AS (
             SELECT p.discordID 
@@ -701,6 +713,7 @@ def check_database():
             FROM totals t
             INNER JOIN Player p ON p.discordID = t.discordID""")        
 
+        # Create the view to calculate whether a player's performance should increase their rank
         cur.execute(f"""CREATE VIEW vw_TierModifier AS
             WITH totals AS (
             SELECT p.discordID 
@@ -725,6 +738,7 @@ def check_database():
             FROM winratio
             """)
 
+        # Create the player view that includes their tier calculation
         cur.execute("""CREATE VIEW IF NOT EXISTS vw_Player AS
             SELECT 
                 CASE WHEN COALESCE(tieroverride,0) = 0 OR COALESCE(tieroverride,0) = '' 
@@ -752,6 +766,7 @@ def check_database():
         dbconn.commit()
 
         print ("Database is configured")
+
     except sqlite3.Error as e:
         print(f"Terminating due to database initialization error: {e}")
         exit()    
@@ -924,13 +939,13 @@ async def start_vote(interaction: discord.Interaction, gameID: int, winner: str,
                 except discord.Forbidden:
                     # Handle the case where the player's DMs are closed
                     await client.send(f"Could not send a DM to {player[1]}. They may have DMs disabled.")
-                
+                    
         # Otherwise send the voting buttons to the channel and the callback will determine if they are allowed to vote
         else:
-            await interaction.followup.send(embed=embed, view=view)
+            message = await interaction.followup.send(embed=embed, view=view)
 
-        # Start a 5-minute timer for each user to vote
-        await asyncio.sleep(300)  # 300 seconds = 5 minutes
+        # Start a 5-minute (300 seconds) timer for each user to vote
+        await asyncio.sleep(300) 
         
         # After the time has elapsed the buttons will be disabled
         for item in view.children:
@@ -989,17 +1004,22 @@ async def start_vote(interaction: discord.Interaction, gameID: int, winner: str,
     except sqlite3.Error as e:
         print(f"Terminating due to database MVP voting error: {e}")
         return False
+    
+    finally:
+        cur.close()
+        dbconn.close() 
+        return    
 
 #Method that serves as a callback from the voting buttons
 def create_vote_callback(discord_id, view, votetable, gameId, players):
     async def vote_callback(interaction):
         try:
-            """
-            #############################################################################################################
-            # This comment disables voting for the entire channel in its current form, unsure if I can fix this in time.
-            #############################################################################################################
+            # Create the database connection
+            dbconn = sqlite3.connect("bot.db")
+            cur = dbconn.cursor()
+
             # First check if we are using DM voting, if not then we need to check that this user is a valid voter
-            if VOTE_DM == False:
+            if not VOTE_DM:
                 # Default to False for the user being allowed to vote
                 allowed_vote = False
 
@@ -1010,32 +1030,38 @@ def create_vote_callback(discord_id, view, votetable, gameId, players):
                         allowed_vote = True
 
                 # After the loop, if the user was not set to be allowed to vote a message will be sent and the callback ends
-                if allowed_vote == False:
-                    # Disable all buttons in the view since this is not valid
-                    for item in view.children:
-                        item.disabled = True
-
-                    # Update the message to disable the buttons
-                    await interaction.message.edit(view=view)    
-
+                if not allowed_vote:
                     # Inform the user they cannot vote                
-                    await interaction.response.send_message("Sorry, you are now allowed to vote for this match.", ephemeral=True)
+                    await interaction.response.send_message("Sorry, you are not allowed to vote for this match.", ephemeral=True)
                     return
-            """
-            # At this point the user is valid, either due to DM or they were checked through the channel
 
-            # Create the database connection
-            dbconn = sqlite3.connect("bot.db")
-            cur = dbconn.cursor()
+                # Now check to make sure the user has not already voted by checking their ID and gameID against the Voted table
+                cur.execute("SELECT EXISTS(SELECT discordID from Voted WHERE discordID = ? AND gameID = ?)", [interaction.user.id, gameId])
+                hasvoted = cur.fetchone()
+
+                # If the user's ID exists then they have already voted and the callback ends
+                if hasvoted[0] == 1:
+                    # Inform the user they cannot vote                
+                    await interaction.response.send_message("Sorry, you already voted for this match.", ephemeral=True)
+                    return
+
+            # At this point the user is valid and has not previously voted
 
             # Use the values passed by the button click and insert the vote into the table
             query = f"INSERT INTO {votetable} VALUES (?, ?)"
             cur.execute(query, [gameId, discord_id])
             dbconn.commit()
 
-            # Disable all buttons in the view after a vote is submitted (no double voting)
-            for item in view.children:
-                item.disabled = True
+            # If using DM voting, disable all buttons in the view after a vote is submitted (no double voting)
+            if VOTE_DM:
+                for item in view.children:
+                    item.disabled = True
+
+            # If voting in the channel we cannot disable the buttons so we will track the user's vote
+            else:
+                query = f"INSERT INTO Voted VALUES (?, ?)"
+                cur.execute(query, [interaction.user.id, gameId])
+                dbconn.commit()
 
             # Update the message to disable the buttons
             await interaction.message.edit(view=view)
@@ -1046,6 +1072,10 @@ def create_vote_callback(discord_id, view, votetable, gameId, players):
         except sqlite3.Error as e:
             print(f"Terminating due to database MVP voting error: {e}")
             return False
+
+        finally:
+            cur.close()
+            dbconn.close() 
 
     # End the callback
     return vote_callback
@@ -2235,7 +2265,7 @@ async def export(interaction):
     name = 'settings',
     description = "View and/or change global settings.  Each paramter is optional.",
     guild = discord.Object(GUILD))
-async def settings(interaction: discord.Interaction, use_ai: str = '', random_sort: str = '', max_tier: int = -1, min_votes: int = -1):
+async def settings(interaction: discord.Interaction, use_ai: str = '', random_sort: str = '', max_tier: int = -1, min_votes: int = -1, vote_dm: str = ''):
     # This seemed to take longer than expected in testing so better to defer
     await interaction.response.defer(ephemeral=True)
     
@@ -2272,19 +2302,19 @@ async def settings(interaction: discord.Interaction, use_ai: str = '', random_so
         # Display the change 
         await interaction.followup.send(f"USE_RANDOM_SORT has been set to {USE_RANDOM_SORT}", ephemeral=True)
 
-    # # Same setup as AI above
-    # if vote_dm != '' and (vote_dm.lower() == 'true' or vote_dm.lower() == 'false'):
-    #     # If true then set it to true
-    #     if vote_dm.lower() == 'true':
-    #         global VOTE_DM
-    #         VOTE_DM = True
+    # Same setup as AI above
+    if vote_dm != '' and (vote_dm.lower() == 'true' or vote_dm.lower() == 'false'):
+        # If true then set it to true
+        if vote_dm.lower() == 'true':
+            global VOTE_DM
+            VOTE_DM = True
         
-    #     # Otherwise it had to be false
-    #     else:
-    #         VOTE_DM = False
+        # Otherwise it had to be false
+        else:
+            VOTE_DM = False
 
-    #     # Display the change 
-    #     await interaction.followup.send(f"VOTE_DM has been set to {VOTE_DM}", ephemeral=True)
+        # Display the change 
+        await interaction.followup.send(f"VOTE_DM has been set to {VOTE_DM}", ephemeral=True)
 
     # Same premise although this is an integer value instead of true/false
     if max_tier >= 0 and isinstance(max_tier, int):
@@ -2312,7 +2342,7 @@ async def settings(interaction: discord.Interaction, use_ai: str = '', random_so
     embedGames.add_field(name = 'USE_AI_MATCHMAKE', value = f"{USE_AI_MATCHMAKE}", inline=False)
     embedGames.add_field(name = 'MAX_DEGREE_TIER', value = f"{MAX_DEGREE_TIER}", inline=False)
     embedGames.add_field(name = 'USE_RANDOM_SORT', value = f"{USE_RANDOM_SORT}", inline=False)
-    # embedGames.add_field(name = 'VOTE_DM', value = f"{VOTE_DM}", inline=False)
+    embedGames.add_field(name = 'VOTE_DM', value = f"{VOTE_DM}", inline=False)
     embedGames.add_field(name = 'MIN_VOTES_REQUIRED', value = f"{MIN_VOTES_REQUIRED}", inline=False)
 
     # Output the embed
