@@ -925,9 +925,9 @@ async def start_vote(interaction: discord.Interaction, gameID: int, winner: str,
                     # Handle the case where the player's DMs are closed
                     await client.send(f"Could not send a DM to {player[1]}. They may have DMs disabled.")
                 
-        # # Otherwise send the voting buttons to the channel and the callback will determine if they are allowed to vote
-        # else:
-        #     await interaction.followup.send(embed=embed, view=view)
+        # Otherwise send the voting buttons to the channel and the callback will determine if they are allowed to vote
+        else:
+            await interaction.followup.send(embed=embed, view=view)
 
         # Start a 5-minute timer for each user to vote
         await asyncio.sleep(300)  # 300 seconds = 5 minutes
@@ -2378,9 +2378,9 @@ async def showuser(interaction: discord.Interaction, username: str):
     description = "Clears the game data from the database, enter I KNOW WHAT I AM DOING (all caps) to proceed.",
     guild = discord.Object(GUILD))
 async def cleargamedata(interaction: discord.Interaction, reassurance: str):
-    # Admin only command
-    if not is_admin(interaction):
-        await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
+    # Check if the user is the owner of the guild/channel
+    if interaction.user.id != interaction.guild.owner.id:
+        await interaction.response.send_message("This command is only for the guild owner.", ephemeral=True)
         return
     
     # Case sensitive - check that the user really intends to do this
@@ -2425,6 +2425,9 @@ async def cleargamedata(interaction: discord.Interaction, reassurance: str):
             cur.close()
             dbconn.close() 
             return
+        
+    else:
+        await interaction.response.send_message("Data not purged.  Use the phrase I KNOW WHAT I AM DOING in all caps if you wish to continue.", ephemeral=True)
 
 #Slash command to delete all game data while preserving user data
 @tree.command(
