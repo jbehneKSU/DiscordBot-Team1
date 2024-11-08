@@ -1959,10 +1959,10 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
     #region TESTCODE
     ############################################################################################################
     #   TESTING ONLY
-        player_users = [500012,500028,500001,500008,500015,500002,500018,500026,500027,500030,500042,500044,500014,
-            500022,500032,500035,500023,500041,500040,500029]
+        # player_users = [500012,500028,500001,500008,500015,500002,500018,500026,500027,500030,500042,500044,500014,
+        #     500022,500032,500035,500023,500041,500040,500029]
         
-        volunteer_ids = [500031,500020,500037,500007,500011,500017,500039,]
+        # volunteer_ids = [500031,500020,500037,500007,500011,500017,500039,]
     ############################################################################################################
     #endregion TESTCODE
 
@@ -2153,16 +2153,6 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
     name = 'win',
     description = "Set the winning team for open games by providing the lobby number and winning team color",
     guild = discord.Object(GUILD)
-    # ,options=[
-    #     create_option(
-    #         name="choice",
-    #         description="Your choice",
-    #         option_type=3,  # 3 is the type for string
-    #         required=True,
-    #         choices=[
-    #             create_choice(name="Option 1", value="option1"),
-    #             create_choice(name="Option 2", value="option2")
-    #         ])]
     )
 async def win(interaction: discord.Interaction, lobby: int, winner: str):
     if not is_admin(interaction):
@@ -2462,16 +2452,12 @@ async def cleargamedata(interaction: discord.Interaction, reassurance: str):
 #Slash command to delete all game data while preserving user data
 @tree.command(
     name = 'setplayertier',
-    description = "Set's a specified player's tier to a static number to override their calculated tier.",
+    description = "Set a player's tier to override their calculated tier. A 0 or less will revert back to using the calculated tier.",
     guild = discord.Object(GUILD))
 async def setplayertier(interaction: discord.Interaction, username: str, tier: int):
     # Admin only command
     if not is_admin(interaction):
         await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
-        return
-    
-    if tier < 1:
-        await interaction.response.send_message("Tier should be 1 or more.", ephemeral=True)
         return
     
     try:
