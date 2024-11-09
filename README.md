@@ -357,7 +357,7 @@ Admin commands used for configurations, running games, and making changes.  Each
   - min_votes - The minimum number of votes a player must have to win the MVP vote.  Default setting is *3*.
   - vote_dm - Controls whether the MVP voting embed is sent to eligible players via DM or posted directly in the chat.  Default setting is *False*, which puts the vote in the channel.
 
-[!Note]
+>[!Note]
 The /cleargamedata uses a check (interaction.user.id != interaction.guild.owner.id) that the user is the guild owner, if this becomes an issue at any point with Discord's rules this check can be switched to use the admin check function instead, similar to how other admin commands are handled.
 
 ## Player Commands
