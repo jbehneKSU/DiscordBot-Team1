@@ -189,7 +189,7 @@ The default values are a winratio of .67 and gamesplayed 10.  This means that if
 >[!Tip]
 The RankHistory comes into play in that last statement, that table is also used to determine the length of time in a rank and whether the win rate and games played occurred within the current rank.
 
-## Running the bot
+## Starting the bot
 Run the bot.py via python bot.py
 (Use python3 for Mac/Linux)
 
@@ -238,9 +238,6 @@ The MAX_DEGREE_TIER is exactly how it sounds, a **maximum** allowed difference. 
 
 ### Gemini AI Matchmaking
 The Gemini method takes the same player list and creates a prompt by translating the list into a JSON string.  The output back from Gemini is specified in JSON as well and is parsed back out to create the Team classes.
-
->[!CAUTION]
-In its current form, the prompt has been unreliable in both following preferences AND adhering to the allowabled difference between opposing lane tiers.  Better prompt engineering may be necessary to improve results.
 
 ### How Tier Calculations Work
 As noted in the "How to setup the Discord Bot" and the "Database" section above, the League of Legend ranks are mapped to a tier score in the .env file.
@@ -295,23 +292,91 @@ LEFT OUTER JOIN vw_TierModifier mod ON mod.discordID = Player.discordID
 >[!Tip]
 If a number exists in the "tieroverride" column for a player it will automatically override all calculations, including the win modifier.
 
+## MVP Voting
+MVP Voting launches directly after an admin sets the winner of a lobby.  Depending on the settings, the voting embed will either be sent via DM to elibile voters, or it will be sent to the channel.  Either method keeps all voting confidential, a player's vote is never stored with their identification.
+
+Eligible voters are the 10 players in the specified game's lobby plus any volunteers.  
+
+>[!Tip]
+Volunteers can vote in every lobby, so if there were 3 lobbies at the same time, they can vote in all 3.
+
+Voting lasts for 5 minutes, once the time expires the voting buttons are disabled and the winner is announced in the main channel.  If no player met the minimum number of votes setting, it will be announced that no one won the vote.  
+
+>[!Tip]
+Multiple players are allowed to win if there is a tie, but they still must meet the minimum number of votes so this should be rare.
+
+Finally, when MVP voting starts, a new table is dynamically generated in the database using the game's ID.  This allows voting to run in parallel for multiple lobbies as well as allowing matchmaking to continue during the voting period.  Once voting ends the table is automatically dropped.
+
+### DM Voting
+- This will check if players have DM disabled so that it does not break, but those players will not have a chance to vote.
+- The voting embed will be sent as a DM to eligible voters displaying 5 buttons, one for each player on the winning team.
+- The buttons will disable after a 5 minute voting period.
+- In DM mode, the buttons will also disable as soon as the player votes to prevent extra votes.  Sorry, no take backs.
+
+### Channel voting
+- With this method, disabling buttons applies to everyone, so additional checks take place.
+- When anyone clicks a vote button in the channel it will first check their Discord ID is in the eligible voting group.
+- If that passes it will then check to see if the player has voted on this game before.
+  - An extra table was added to the database called "Voted" that stored the Discord ID and GameID.  This table is purged every time the bot starts.
+- If a player does not pass the checks, they are informed of why they cannot vote.
+- As with DM voting, after the 5 minutes pass the buttons are disabled.
+
 ## Admin Commands
-Listing of admin only commands and their usage
-- /export - exports data to Google Spreadsheets​
-- /settings - command to allow admins to edit parameters for matchmaking, including using AI, the allowable tier difference between players, and sorting the players by tier vs random​
-- /win - sets the winning team
-- /toxicity - updates toxicity to the database
-- /checkin – the check-in button was modified to give the player feedback for updating their profile and ensures the player is registered in the database​
-- /volunteer - allows players to volunteer
-- /players - displays players in the lobby
-- /remove - lets players remove themselves
-- /activegames - shows open games that must be completed before a new game can be created​
+Admin commands used for configurations, running games, and making changes.  Each command is listed below along with their parameters.  Optional parameters with a default are in bold.
+
+### Matchmaking and Gameplay
+- /checkin – This launches the check in embed for users to sign up for a game.
+  - **timeout** - Time in seconds the check in embed is valid, this has a default of 900 seconds for 15 minutes.
+- /players - This displays all users in a Player or Volunteer role and indicates if lobbies are ready.
+- /volunteer - This launches the volunteer embed, this is used if there is not a number of players divisible by 10 so extra players can still participate.
+- /matchmake - This will start the matchmaking process and create a lobby for every 10 players.  
+  - match_number - This is the game/match number for the day, typically 1, 2, and 3.
+- /remove - Clears all users from the Player and Volunteer role.
+- /win - This will set the winning team for an active lobby and also launch the MVP voting period.
+  - lobby - The lobby number of the game to set the winner for, must be a valid number.
+  - winner - The name of the winning team, must be either blue or red.  Case does not matter.
+- /activegames - This will display all active and open games and their lobby number.  
+
+### View and Modify Player Data
+- /toxicity - Adds 1 point of toxicity to the specified player.
+  - username - This can be either the Discord display name or the Riot ID of the player, case does not matter.
+- /setplayertier - This will set a player's tier to a static number instead of having their tier calculated by rank/wins.  
+  - username - This can be either the Discord display name or the Riot ID of the player, case does not matter.
+  - tier - The exact tier you want the player to be.  *Setting this to 0 will remove the override and their calculated tier is used again.*
+- /showuser - Displays the information about a user from the database.
+  - username - This can be either the Discord display name or the Riot ID of the player, case does not matter.
+
+### Managing Settings and Exports
+- /export - This launches an embed with buttons to allow you to export data from the database to Google Sheets.
+- /cleargamedata - This will first create a backup of the bot.db file by appending BACKUP_ to the front and the current timestamp to the end, then delete all data from GameDetail and Games to reset the season.
+  - reassurance - This parameter requires you to type, in all caps, **I KNOW WHAT I AM DOING** in order to allow the delete to continue.
+- **/settings** - This command allows you to alter how aspects of the bot function.  Every parameter is optional so it will change only the settings you enter a value for.
+  - use_ai - This controls whether the matchmaking uses Gemini AI or Python's algorithm.  Default setting is *False*.
+  - random_sort - This controls whether the player list is sorted by tier or randomized to prevent duplicate groups and affects both matchmaking options.  Default setting is *True*.
+  - max_tier - This is the highest difference between two opposing players that will be allowed in the matchmaking algorithm.  Default setting is *2*.
+  - min_votes - The minimum number of votes a player must have to win the MVP vote.  Default setting is *3*.
+  - vote_dm - Controls whether the MVP voting embed is sent to eligible players via DM or posted directly in the chat.  Default setting is *False*, which puts the vote in the channel.
+
+[!Note]
+The /cleargamedata uses a check (interaction.user.id != interaction.guild.owner.id) that the user is the guild owner, if this becomes an issue at any point with Discord's rules this check can be switched to use the admin check function instead, similar to how other admin commands are handled.
 
 ## Player Commands
 Listing of player commands and their usage
-- /riotid - allows the player to update their Riot ID in the database​
-- /fill - allows the player to set their role preference to neutral (all 4's)​
-- /roleselect - displays an embed with dropdowns to allow the player to set their preferences for each position​
+- /riotid - This command is used by the player to set their Riot ID.
+  - id - This is the user's Riot ID, in the required format of {NAME}{TAGLINE}.
+- /fill - This command is used by the player to set their preferences all to 4, indicating a neutral stance on every position available.
+- /roleselect - This launches an embed for the player with drop down selectors they can use to set individual lane preferences.  1 = most preferred and 5 = absolutely not.
 
-## Known issues / Incomplete code
-1.  MVP voting that allows the vote to take place in the channel is commented out currently.  The issue is disabling the buttons in the embed is channel wide, this is how multiple voting is blocked so there will need to be additional logic to make sure the buttons stay enabled AND prevent multiple votes.
+## Using the bot - A Typical Scenario for the Admin
+1. Ensure all /settings are how you want them for the first round. (You can always change it next round!)
+2. Once enough users have come online, initiate the /checkin period.  *You may want to run /remove in case anyone is still in a role from a previous session.*
+3. As the time gets close for the check in period to end, use the /players command to get an idea of the number of players.
+4. If there are not a number of players divisible by 10, start the /volunteer command and keep checking with /players until you have an appropriate number.
+5. Once you have an appropriate number of players, run /matchmake to generate the teams.
+6. Play the game.
+7. Use /win to set the winning team of each lobby, this also kicks off the MVP voting.  *If you can't remember which games are still open, use /activegames.*
+8. If you have more games to play, it's best to use /remove to start fresh, then go back to step 1!
+
+## Known issues
+1.  The Gemini AI prompt generated very poor teams, it seemed to never be able to fully conform to either the player's preferences or the allowable difference between opposing lanes.  Better prompt engineering may improve this, or as Gemini improves this may perform better in the future, but as of this release it is not recommended.
+2.  Not every command uses a "defer" in the messaging, this has never been an issue in testing, but if an error message like "This did not respond" occurs, it could mean that command took longer than 3 seconds and did not use a defer.  The issue with adding a defer to everything was the ephemeral setting could not be set per message when using it.
