@@ -377,6 +377,13 @@ Listing of player commands and their usage
 7. Use /win to set the winning team of each lobby, this also kicks off the MVP voting.  *If you can't remember which games are still open, use /activegames.*
 8. If you have more games to play, it's best to use /remove to start fresh, then go back to step 1!
 
+## Using the bot - A Typical Scenario for the Player
+1. If this is your first time using this bot you will want to register yourself, this can be done immediately by using /riotid to set your ID or by checking in once the admin has started the check in period.
+2. If you have no saved your Riot ID it is very important to do so by typing the /riotid command and entering your ID in the field in the format of {name}{tagline}.  **Make sure if you get a message that your account was not found that you entered the name correctly.**
+3. This is also a good time to run the /roleselect command, this will show your current lane preferences and allow you to set them.  A 1 is the strongest preference and a 5 is a *do not want*.  You can set lanes to the same number if you're fine with either or you can rank them 1-5, your choice.
+4. You can also use the /fill command if you have no preference at all, this will set all lane preferences to a 4 and the matchmaking will place you wherever it can.
+5. At the completion of a game there will be an MVP voting period for any game you played or participated in.  5 buttons will be displayed, 1 for each player on the winning team.  Clicking one of these buttons cast your anonymous vote for that player.  You can only vote once and cannot change your vote!
+
 ## Known issues
 1.  The Gemini AI prompt generated very poor teams, it seemed to never be able to fully conform to either the player's preferences or the allowable difference between opposing lanes.  Better prompt engineering may improve this, or as Gemini improves this may perform better in the future, but as of this release it is not recommended.
 2.  Not every command uses a "defer" in the messaging, this has never been an issue in testing, but if an error message like "This did not respond" occurs, it could mean that command took longer than 3 seconds and did not use a defer.  The issue with adding a defer to everything was the ephemeral setting could not be set per message when using it.
