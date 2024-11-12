@@ -2452,7 +2452,7 @@ async def cleargamedata(interaction: discord.Interaction, reassurance: str):
 #Slash command to delete all game data while preserving user data
 @tree.command(
     name = 'setplayertier',
-    description = "Set a player's tier to override their calculated tier. A 0 or less will revert back to using the calculated tier.",
+    description = "Set a player's tier to override their calculated tier.",
     guild = discord.Object(GUILD))
 async def setplayertier(interaction: discord.Interaction, username: str, tier: int):
     # Admin only command
