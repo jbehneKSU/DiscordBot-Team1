@@ -135,7 +135,9 @@ class PreferenceDropdown(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         save_preference(interaction, self.values[0])
-        await interaction.response.send_message(f'Updated {self.values[0]} for {self.placeholder}', ephemeral=True)
+        ## Commented out the line outputting the change due to feedback that it generated too much noise
+        # await interaction.response.send_message(f'Updated {self.values[0]} for {self.placeholder}', ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
 
 #Button to set preferences to fill - embed did not have room so is unused currently
 class FillButton(discord.ui.Button):
@@ -234,7 +236,7 @@ class volunteerButtons(discord.ui.View):
     If the user doesn't have the volunteer role, it will give them the volunteer role. 
     """
     @discord.ui.button(
-            label = "Volunteer",
+            label = "Sit Out",
             style = discord.ButtonStyle.green)
     async def checkin(self, interaction: discord.Interaction, button: discord.ui.Button):
 
@@ -777,6 +779,9 @@ def check_database():
 
 #Method to add one toxicity point to the player
 def update_toxicity(interaction, user):
+    if "<@" in user:
+        user = user[2:-1]
+
     try:
         # Create the database connection
         dbconn = sqlite3.connect("bot.db")
@@ -786,8 +791,8 @@ def update_toxicity(interaction, user):
         found_user = False
 
         # Query to search for player by discordName or riotID
-        query = 'SELECT EXISTS(SELECT discordName FROM player WHERE LOWER(discordName) = ? OR LOWER(riotID) = ?)'
-        args = (user, user)
+        query = 'SELECT EXISTS(SELECT discordName FROM player WHERE LOWER(discordName) = ? OR LOWER(riotID) = ? OR discordID = ?)'
+        args = (user, user, user)
         cur.execute(query, args)
         data = cur.fetchone()
 
@@ -797,8 +802,8 @@ def update_toxicity(interaction, user):
             found_user = True
 
             # Create the update statement and add a point
-            query = 'UPDATE Player SET toxicity = toxicity + 1 WHERE LOWER(discordName) = ? OR LOWER(riotID) = ?'
-            args = (user, user)
+            query = 'UPDATE Player SET toxicity = toxicity + 1 WHERE LOWER(discordName) = ? OR LOWER(riotID) = ? OR discordID = ?'
+            args = (user, user, user)
             cur.execute(query, args)
             dbconn.commit()         
 
@@ -1079,6 +1084,23 @@ def create_vote_callback(discord_id, view, votetable, gameId, players):
 
     # End the callback
     return vote_callback
+
+#Method returns how many volunteers are needed to make the players a divisible amount of 10
+def count_volunteers_needed(interaction):
+    #Finds all players in discord, adds them to a list
+    player_role = get(interaction.guild.roles, name='Player')
+    player_users = [member.id for member in player_role.members]
+
+    # If there at least 10 players and they are not divisible by 10 then return the number
+    if len(player_users) % 10 != 0 and len(player_users) >= 10:
+        additional_volunteers_needed = (len(player_users) % 10)
+
+    # If the condition isn't true then no volunteers are needed
+    else:
+        additional_volunteers_needed = 0
+    
+    # Return the number
+    return additional_volunteers_needed
 
 #endregion GENERAL METHODS
 
@@ -1796,8 +1818,20 @@ async def volunteer(interaction):
         await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
         return    
     
-    view = volunteerButtons()
-    await interaction.response.send_message('The Volunteer check has started! You have 15 minutes to volunteer if you wish to sit out', view = view)
+    volunteers_needed = count_volunteers_needed(interaction)
+    if volunteers_needed == 0:
+        await interaction.response.send_message('No volunteers are needed.', ephemeral=True)
+        return
+    else:
+        view = volunteerButtons()
+        message = await interaction.channel.send(f'The Volunteer check has started! {volunteers_needed} volunteers needed to sit out .', view = view)
+
+    while volunteers_needed != 0:
+        await asyncio.sleep(1)
+        volunteers_needed = count_volunteers_needed(interaction)
+
+    await message.delete()
+    await interaction.channel.send('Volunteer check completed! No more volunteers needed.')
 
 # Command to add a point of toxicity to a player
 @tree.command(
