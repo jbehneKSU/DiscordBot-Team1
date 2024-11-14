@@ -1779,10 +1779,12 @@ async def riotid(interaction, id: str):
     description = 'Initiate Tournament Check-In.  Add timeout in seconds or use the default of 900 - 15 minutes.',
     guild = discord.Object(GUILD))
 async def checkin(interaction, timeout: int=900):
+    # Check if the player is an admin and end if they are not
     if not is_admin(interaction):
         await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
         return    
     
+    # Create the check in class and send the view to the channel
     view = CheckinButtons(timeout=timeout)
     await interaction.response.send_message(f'Check-In for the tournament has started! You have {timeout//60} minutes to check-in.', view = view)
 
@@ -1792,7 +1794,10 @@ async def checkin(interaction, timeout: int=900):
         description= 'Set your position preferences to fill.',
         guild = discord.Object(GUILD))
 async def fill(interaction):
+    # Register the player to make sure they have been added to the database
     register_player(interaction)
+
+    # Use the save preference function and pass the fill param to set everything to 4
     save_preference(interaction, "Fill - 44444")
     await interaction.response.send_message("Your preference has been set to fill", ephemeral=True)
 
@@ -1802,9 +1807,14 @@ async def fill(interaction):
         description= 'Update your role preferences.',
         guild = discord.Object(GUILD))
 async def roleselect(interaction):
+    # Make sure the player has been created
     register_player(interaction)
+
+    # Create the embed showing current preferences 
     embed = discord.Embed(title="Select your role preferences (1 (high) to 5 (never))", 
                           description=get_preferences(interaction), color=0x00ff00)
+    
+    # Create the drop down list view for selecting preferences and display it
     view = PreferenceDropdownView()
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
@@ -1814,31 +1824,50 @@ async def roleselect(interaction):
     description = 'initiate check for volunteers',
     guild = discord.Object(GUILD))
 async def volunteer(interaction):
+    # Check if the player is an admin and end if they are not
     if not is_admin(interaction):
         await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
         return    
     
+    # Call the count function to determine how many volunteers are needed to have an even 10 divisible Player count
     volunteers_needed = count_volunteers_needed(interaction)
+
+    # If no volunteers are needed output a message and end the call
     if volunteers_needed == 0:
         await interaction.response.send_message('No volunteers are needed.', ephemeral=True)
         return
+    
+    # If volunteers are needed then create the view and send it to the channel along with the count of how many are needed
     else:
         view = volunteerButtons()
+
+        # Defer the response, because of the channel.send there will be two messages in the channel so we must handle both
+        await interaction.response.defer()
+
+        # channel.send is used here because response and followup did not return the message context which is needed to remove the volunteer embed
         message = await interaction.channel.send(f'The Volunteer check has started! {volunteers_needed} volunteers needed to sit out .', view = view)
 
+    # Keep checking if volunteers are needed
     while volunteers_needed != 0:
+        # Wait 1 second to check, this is not super intensive and helps end the embed as soon as the last volunteer clicks
         await asyncio.sleep(1)
+
+        # Get the count again
         volunteers_needed = count_volunteers_needed(interaction)
 
+    # Once enough volunteers have signed up delete the volunteer embed
     await message.delete()
-    await interaction.channel.send('Volunteer check completed! No more volunteers needed.')
+
+    # Follow up on the original message and post that there are no more volunteers needed
+    await interaction.followup.send('Volunteer check completed! No more volunteers needed.')
 
 # Command to add a point of toxicity to a player
 @tree.command(
         name = 'toxicity',
-        description = 'Give a user a point of toxicity, you can use the Discord name or Riot ID.',
+        description = 'Give a user a point of toxicity, you can use @Discord name, nickname, or Riot ID.',
         guild = discord.Object(GUILD))
 async def toxicity(interaction: discord.Interaction, username: str):
+    # Check if the player is an admin and end if not
     if not is_admin(interaction):
         await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
         return
@@ -1850,6 +1879,7 @@ async def toxicity(interaction: discord.Interaction, username: str):
             await interaction.response.send_message(f"{username}'s toxicity point has been updated.", ephemeral=True)
         else:
             await interaction.response.send_message(f"{username} could not be found.", ephemeral=True)
+
     except Exception as e:
         print(f'An error occured: {e}')
 
@@ -1859,21 +1889,30 @@ async def toxicity(interaction: discord.Interaction, username: str):
     description = 'Remove all users from Players and Volunteer roles.',
     guild = discord.Object(GUILD))
 async def remove(interaction: discord.Interaction):
+    # Check if the player is an admin and end if not
     if not is_admin(interaction):
         await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
         return    
 
     try:
+        # Grab the player and volunteer roles
         player = get(interaction.guild.roles, name = 'Player')
         volunteer = get(interaction.guild.roles, name = 'Volunteer')
+        
+        # This may not be necessary as it runs very quickly, but this was part of the original bot
         await interaction.response.defer(ephemeral = True)
         await asyncio.sleep(1)
+
+        # Loop through the users in the channel and remove them from either role they exist in
         for user in interaction.guild.members:
             if player in user.roles:
                 await user.remove_roles(player)
             if volunteer in user.roles:
                 await user.remove_roles(volunteer)
+
+        # Send a followup message that the roles are cleared
         await interaction.followup.send('All users have been removed from roles.')
+
     except Exception as e:
         print(f'An error occured: {e}')
 
@@ -1883,10 +1922,12 @@ async def remove(interaction: discord.Interaction):
         description='Find all players and volunteers currently enrolled in the game',
         guild = discord.Object(GUILD))
 async def players(interaction: discord.Interaction):
+    # Check if the player is an admin and end if not
     if not is_admin(interaction):
         await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
         return
 
+    # Create an empty message var for appending the final message
     message = ''
 
     try:
@@ -1904,20 +1945,23 @@ async def players(interaction: discord.Interaction):
             if volunteer in user.roles:
                 volunteer_users.append(user.name)
 
+        # Create a count of each role
         player_count = sum(1 for user in interaction.guild.members if player in user.roles)
         volunteer_count = sum(1 for user in interaction.guild.members if volunteer in user.roles)
 
-        #Embed to display all users who volunteered to sit out.
+        # Embed to display users in the Player role
         embedPlayers = discord.Embed(color = discord.Color.green(), title = 'Total Players')
         embedPlayers.set_footer(text = f'Total players: {player_count}')
         for pl in player_users:
             embedPlayers.add_field(name = '', value = pl)
 
+        #Embed to display all users who volunteered to sit out.
         embedVolunteers = discord.Embed(color = discord.Color.orange(), title = 'Total Volunteers')
         embedVolunteers.set_footer(text = f'Total volunteers: {volunteer_count}')
         for vol in volunteer_users:
             embedVolunteers.add_field(name = '', value = vol)
         
+        # Use the counts to determine the correct output, whether the lobby is good, needs more players, or needs volunteers
         next_increment = 10 - (player_count % 10)
         if player_count == 10:
             message += "There is a full lobby with 10 players!"
@@ -1937,15 +1981,17 @@ async def players(interaction: discord.Interaction):
             embedMessage.add_field(name = '', value = message)
 
         await interaction.response.send_message(embeds = [embedMessage, embedPlayers, embedVolunteers])
+
     except Exception as e:
         print(f'An error occured: {e}')
 
 #Slash command to create teams
 @tree.command(
     name = 'matchmake',
-    description = "Form teams for all players enrolled in the game.",
+    description = "Form teams. Pass a match_number of the next match for the day.",
     guild = discord.Object(GUILD))
-async def matchmake(interaction: discord.Interaction, match_number: int):
+async def matchmake(interaction: discord.Interaction, match_number: int, reroll: bool = False):
+    # Check if the player is an admin and end if not
     if not is_admin(interaction):
         await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
         return    
@@ -1959,7 +2005,23 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
         dbconn = sqlite3.connect("bot.db")
         cur = dbconn.cursor()
 
-        # Query to make sure games have been left actives, this ensures the win command is used after games are played
+        # Query to check if the match number has been used already today
+        query = "SELECT EXISTS (SELECT * FROM Games WHERE gameNumber = ? and gameDate = DATE('now'))"
+        cur.execute(query, [match_number,])
+        result = cur.fetchone()
+
+        # First check if the game already exists AND the admin wants to reroll the existing team
+        if result[0] != 0 and reroll:
+            # If true then erase the game from the database and continue matchmaking
+            reset_db_match(match_number)
+
+        # If EXISTS does not return a 0 and there's no reroll then the given match number has already been used today and the method ends
+        elif result[0] != 0:
+            await interaction.response.send_message(f'Match number {match_number} has already been used today', ephemeral = True)
+            print("Matchmake command called using a match number that was already used for today.")
+            return
+
+        # Query to make sure no games have been left active, this ensures the win command is used after games are played
         query = "SELECT EXISTS (SELECT * FROM Games WHERE isComplete = 0)"
         cur.execute(query)
         result = cur.fetchone()
@@ -1970,17 +2032,6 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
             print("Matchmake command called with incomplete games still active.")
             return
 
-        # Query to check if the match number has been used already today
-        query = "SELECT EXISTS (SELECT * FROM Games WHERE gameNumber = ? and gameDate = DATE('now'))"
-        cur.execute(query, [match_number,])
-        result = cur.fetchone()
-
-        # If EXISTS does not return a 0 then the given match number has already been used today and the method ends
-        if result[0] != 0:
-            await interaction.response.send_message(f'Match number {match_number} has already been used today', ephemeral = True)
-            print("Matchmake command called using a match number that was already used for today.")
-            return
-
         #Finds all players in discord, adds them to a list
         player_role = get(interaction.guild.roles, name='Player')
         player_users = [member.id for member in player_role.members]
@@ -1989,16 +2040,6 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
         volunteer_role = get(interaction.guild.roles, name='Volunteer')
         volunteer_users = [member.name for member in volunteer_role.members]
         volunteer_ids = [member.id for member in volunteer_role.members]
-
-    #region TESTCODE
-    ############################################################################################################
-    #   TESTING ONLY
-        # player_users = [500012,500028,500001,500008,500015,500002,500018,500026,500027,500030,500042,500044,500014,
-        #     500022,500032,500035,500023,500041,500040,500029]
-        
-        # volunteer_ids = [500031,500020,500037,500007,500011,500017,500039,]
-    ############################################################################################################
-    #endregion TESTCODE
 
         # Ensure an even split of 10 players and end the method if not
         if len(player_users) % 10 != 0:
@@ -2024,13 +2065,14 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
         # Len() uses +1 so that idx corresponds with the Lobby # (1,2,3)
         for idx in range(1, int(len(player_users)/10)+1):
             # Call the primary team creation function by passing the current list of 10 Players, this returns the two teams 
-            # Because idx corresponds to Lobby# and the array is 0 based, subtract 1 from the lobby
+            # Because idx corresponds to Lobby# and the array is 0 based, subtract 1 from the current index
             blueteam, redteam = balance_teams(player_list[idx-1])
 
+            # If either team did not get created no possible combination was found with the current setting
             if blueteam is None or redteam is None:
                 reset_db_match(match_number)
                 
-                # Response type will depend on whether AI is used - with defer this will not be ephmeral
+                # Response type will depend on whether AI is used - with defer this will not be ephemeral
                 if USE_AI_MATCHMAKE:
                     await interaction.followup.send(f'Team could not be formed for Lobby #{idx}, please adjust role preference or tier scores and try again')
                 else:
@@ -2189,6 +2231,7 @@ async def matchmake(interaction: discord.Interaction, match_number: int):
     guild = discord.Object(GUILD)
     )
 async def win(interaction: discord.Interaction, lobby: int, winner: str):
+    # Check if the player is an admin and end if not
     if not is_admin(interaction):
         await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
         return    
@@ -2235,6 +2278,7 @@ async def win(interaction: discord.Interaction, lobby: int, winner: str):
     description = "Shows all games that have not been closed with /win",
     guild = discord.Object(GUILD))
 async def activegames(interaction: discord.Interaction):
+    # Check if the player is an admin and end if not
     if not is_admin(interaction):
         await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
         return
@@ -2277,10 +2321,12 @@ async def activegames(interaction: discord.Interaction):
         description= 'Export database to Google sheets.',
         guild = discord.Object(GUILD))
 async def export(interaction):
+    # Check if the player is an admin and end if not
     if not is_admin(interaction):
         await interaction.response.send_message("This command is only for administrators.", ephemeral=True)
         return
 
+    # Create the view and display it
     view = ExportButtons()
     await interaction.response.send_message(f'Use the buttons below to export the database to Google sheets', view = view, ephemeral=True)
 
