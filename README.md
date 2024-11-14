@@ -57,6 +57,11 @@ In case of the KSU League of Legends Discord Server, the ID is 75230907579839285
 
 So it should look like GUILD_TOKEN = 752309075798392852
 
+### Player and Volunteer Role
+Also in your Discord client, navigate to your server and choose -> Server Settings -> Roles.
+
+Ensure the Player and Volunteer roles exist, if they do not then simply use the Create Role button to create them.  They will not need any access, they are simply used as a container for the players/
+
 ### How to get the CHANNEL_ID token 
 Similar to obtaining the GUILD_ID token, right click on the channel in Discord and select copy channel id.
 
@@ -331,20 +336,24 @@ Admin commands used for configurations, running games, and making changes.  Each
 - /volunteer - This launches the volunteer embed, this is used if there is not a number of players divisible by 10 so extra players can still participate.
 - /matchmake - This will start the matchmaking process and create a lobby for every 10 players.  
   - match_number - This is the game/match number for the day, typically 1, 2, and 3.
+  - **reroll** - This is a True/False parameter to tell the command whether it should regenerate an existing team.  This defaults to False.
 - /remove - Clears all users from the Player and Volunteer role.
 - /win - This will set the winning team for an active lobby and also launch the MVP voting period.
   - lobby - The lobby number of the game to set the winner for, must be a valid number.
   - winner - The name of the winning team, must be either blue or red.  Case does not matter.
 - /activegames - This will display all active and open games and their lobby number.  
 
+>[!WARNING]
+The reroll parameter for the /matchmake command will delete all game data for the match that is passed for the current date.  Make sure not to pass the wrong game number with the reroll parameter set to True as you could lose the teams and win data.
+
 ### View and Modify Player Data
 - /toxicity - Adds 1 point of toxicity to the specified player.
-  - username - This can be either the Discord display name or the Riot ID of the player, case does not matter.
+  - username - This can be the @Discord name, Discord display name, or the Riot ID of the player. *(Case does not matter.)*
 - /setplayertier - This will set a player's tier to a static number instead of having their tier calculated by rank/wins.  
-  - username - This can be either the Discord display name or the Riot ID of the player, case does not matter.
+  - username - This can be the @Discord name, Discord display name, or the Riot ID of the player. *(Case does not matter.)*
   - tier - The exact tier you want the player to be.  *Setting this to 0 will remove the override and their calculated tier is used again.*
 - /showuser - Displays the information about a user from the database.
-  - username - This can be either the Discord display name or the Riot ID of the player, case does not matter.
+  - username - This can be the @Discord name, Discord display name, or the Riot ID of the player. *(Case does not matter.)*
 
 ### Managing Settings and Exports
 - /export - This launches an embed with buttons to allow you to export data from the database to Google Sheets.
@@ -371,8 +380,8 @@ Listing of player commands and their usage
 1. Ensure all /settings are how you want them for the first round. (You can always change it next round!)
 2. Once enough users have come online, initiate the /checkin period.  *You may want to run /remove in case anyone is still in a role from a previous session.*
 3. As the time gets close for the check in period to end, use the /players command to get an idea of the number of players.
-4. If there are not a number of players divisible by 10, start the /volunteer command and keep checking with /players until you have an appropriate number.
-5. Once you have an appropriate number of players, run /matchmake to generate the teams.
+4. If there are not a number of players divisible by 10, start the /volunteer command.  The embed will show the number of volunteers needed and will shut down automatically and send a message once enough volunteers sign up.
+5. Once you have an appropriate number of players, run /matchmake and pass the number of the next game to play to generate the teams.  If you are not happy with the results, you can run /matchmake with the game number again while also adding True to the re-roll parameter.  This will generate a new team and can be useful if making adjustments to the settings.
 6. Play the game.
 7. Use /win to set the winning team of each lobby, this also kicks off the MVP voting.  *If you can't remember which games are still open, use /activegames.*
 8. If you have more games to play, it's best to use /remove to start fresh, then go back to step 1!
@@ -386,4 +395,17 @@ Listing of player commands and their usage
 
 ## Known issues
 1.  The Gemini AI prompt generated very poor teams, it seemed to never be able to fully conform to either the player's preferences or the allowable difference between opposing lanes.  Better prompt engineering may improve this, or as Gemini improves this may perform better in the future, but as of this release it is not recommended.
-2.  Not every command uses a "defer" in the messaging, this has never been an issue in testing, but if an error message like "This did not respond" occurs, it could mean that command took longer than 3 seconds and did not use a defer.  The issue with adding a defer to everything was the ephemeral setting could not be set per message when using it.
+2.  Not every command uses a "defer" in the messaging, this has never been an issue in testing, but if an error message like "The application did not respond" occurs, it could mean that command took longer than 3 seconds and did not use a defer.  The issue with adding a defer to everything was the ephemeral setting could not be set per message when using it.
+
+## Suggested improvements
+During live testing there were 14 points of feedback captured.  Some were easy enough to implement in time for release, the remaining suggestions were preserved here for future development.
+
+- Provide a mechanism for the admin to change players' positions after the team has been created.
+- Have the team creation output only to the admin so they can reroll/make changes without generating messages in the channel, then have the ability to send it to the channel once they are satisfied with the results.
+- When matchmaking, consider a setting to influence the weight of Rank vs Preference, today the code considers preference first and then makes sure the rank is within acceptable ranges.
+- Combine the /roleselect and /riotid into a modal form or single embed that can automatically launch when a player registers for the first time.
+- Create a new read-only channel that has semi-permanent buttons for players to use instead of typing commands.
+- Track role preferences vs assignments, if someone is put in a lane they have a low preference score in then prioritize their highest preference in the next game.
+- Incorporate voting for the ace on the losing team in addition to the current MVP voting on the winning team.
+- Include player preferences for red/blue team.
+- Low priority, look at formatting embeds better for mobile.
