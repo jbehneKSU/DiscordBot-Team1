@@ -2430,6 +2430,10 @@ async def showuser(interaction: discord.Interaction, username: str):
         return
 
     try:
+        # If the user was passed in using the @Discordname parse the ID
+        if "<@" in username:
+            username = username[2:-1]
+
         # Create database connection
         dbconn = sqlite3.connect("bot.db")
         cur = dbconn.cursor()
@@ -2439,9 +2443,9 @@ async def showuser(interaction: discord.Interaction, username: str):
             SELECT discordName, p.riotID, lolRank, toxicity, Tier, tieroverride
             FROM Player p
             INNER JOIN vw_Player vp ON vp.discordID = p.discordID
-            WHERE LOWER(discordName) = ? OR LOWER(p.riotID) = ?
+            WHERE LOWER(discordName) = ? OR LOWER(p.riotID) = ? or p.discordID = ?
             """
-        cur.execute(query, [username.lower(), username.lower()])
+        cur.execute(query, [username.lower(), username.lower(), username])
         player = cur.fetchone()
 
         # If the player is not found then return a message
@@ -2541,6 +2545,10 @@ async def setplayertier(interaction: discord.Interaction, username: str, tier: i
         return
     
     try:
+        # If the user was passed in using the @Discordname parse the ID
+        if "<@" in username:
+            username = username[2:-1]
+    
         # Create database connection
         dbconn = sqlite3.connect("bot.db")
         cur = dbconn.cursor()
@@ -2550,9 +2558,9 @@ async def setplayertier(interaction: discord.Interaction, username: str, tier: i
             SELECT discordName, Tier, tieroverride
             FROM Player p
             INNER JOIN vw_Player vp ON vp.discordID = p.discordID
-            WHERE LOWER(discordName) = ? OR LOWER(p.riotID) = ?
+            WHERE LOWER(discordName) = ? OR LOWER(p.riotID) = ? OR p.discordID = ?
             """
-        cur.execute(query, [username.lower(), username.lower()])
+        cur.execute(query, [username.lower(), username.lower(), username])
         player = cur.fetchone()
 
         # If the player is not found then return a message
@@ -2563,9 +2571,9 @@ async def setplayertier(interaction: discord.Interaction, username: str, tier: i
             # Query to save the change
             query = """
                 UPDATE PLAYER SET tieroverride = ?
-                WHERE LOWER(discordName) = ? OR LOWER(riotID) = ?
+                WHERE LOWER(discordName) = ? OR LOWER(riotID) = ? OR discordID = ?
                 """
-            cur.execute(query, [tier, username.lower(), username.lower()])
+            cur.execute(query, [tier, username.lower(), username.lower(), username])
             dbconn.commit()
 
             # Create the embed for displaying the change
