@@ -847,7 +847,7 @@ def update_riotid(interaction: discord.Interaction, id):
 
 #Method to determine if the user is an admin
 def is_admin(interaction: discord.Interaction) -> bool:
-    return interaction.user.guild_permissions.administrator
+    return interaction.permissions.administrator
 
 #Method to update a game with the winner
 def update_win(lobby, winner):
